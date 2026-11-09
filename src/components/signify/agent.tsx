@@ -108,15 +108,15 @@ export function RepairCard() {
   const alts = pending.alternatives ?? [];
   const top = alts[0];
   return (
-    <div role="alertdialog" aria-label="Signify Agent needs to confirm a sign" className="rounded-3xl border-2 border-foreground bg-accent p-4">
-      <p className="flex items-center gap-2 text-sm font-bold"><Bot className="h-4 w-4" /> Signify Agent</p>
-      <p className="mt-1 text-xl font-bold leading-tight">Not sure about that sign. Did you mean “{pending.gloss.toLowerCase()}”?</p>
-      <p className="mt-1 text-sm">
-        {Math.round(pending.confidence * 100)}% confident{top && ` · could also be “${top.gloss.toLowerCase()}” (${Math.round(top.confidence * 100)}%)`}
+    <div role="alertdialog" aria-label="Signify Agent needs to confirm a sign" className="rounded-2xl bg-muted p-4">
+      <p className="label-caps text-[10px] font-semibold text-muted-foreground">Signify Agent</p>
+      <p className="mt-1 text-base font-bold leading-snug">Not sure about that sign. Did you mean “{pending.gloss.toLowerCase()}”?</p>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Why: {Math.round(pending.confidence * 100)}% confident{top && ` · could also be “${top.gloss.toLowerCase()}” (${Math.round(top.confidence * 100)}%)`}
       </p>
-      <div className="mt-3 grid grid-cols-2 gap-2">
-        <Pill variant="mint" onClick={() => resolveRepair(pending.gloss)}>Yes</Pill>
-        <Pill onClick={() => setShowAll(true)}>No</Pill>
+      <div className="mt-3 flex gap-2">
+        <Pill size="sm" onClick={() => resolveRepair(pending.gloss)}>Yes</Pill>
+        <Pill size="sm" onClick={() => setShowAll(true)}>No</Pill>
       </div>
       {showAll && (
         <div className="mt-2 grid gap-2">

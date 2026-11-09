@@ -71,6 +71,21 @@ export function PillLink({ to, children, variant = "outline", className }: { to:
   );
 }
 
+/** Small gray caps label used above agent screens in the Figma ("SIGNIFY AGENT"). */
+export function AgentLabel({ children = "Signify Agent" }: { children?: ReactNode }) {
+  return <p className="label-caps text-[10px] font-semibold text-muted-foreground">{children}</p>;
+}
+
+/** Small status pill, e.g. "● LISTENING…" / "● FROM BARISTA · SPEAKING". */
+export function StatusPill({ children, dot = "bg-foreground" }: { children: ReactNode; dot?: string }) {
+  return (
+    <span role="status" className="label-caps inline-flex items-center gap-2 rounded-full border-2 border-foreground/15 bg-background px-3 py-1.5 text-[10px] font-semibold">
+      <span aria-hidden className={cn("h-2 w-2 rounded-full", dot)} />
+      {children}
+    </span>
+  );
+}
+
 export function Headline({ dark, soft, className }: { dark: string; soft?: string; className?: string }) {
   return (
     <h1 className={cn("headline text-[44px]", className)}>

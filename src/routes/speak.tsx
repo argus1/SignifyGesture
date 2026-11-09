@@ -1,10 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
-import { Mic, MicOff } from "lucide-react";
+import { Mic, MicOff, X } from "lucide-react";
 import { toast } from "sonner";
 import { useSignify } from "@/lib/signify-store";
-import { TopBar, Pill } from "@/components/signify/ui";
-import { AgentChip } from "@/components/signify/agent";
+import { Pill, StatusPill } from "@/components/signify/ui";
 import { seo } from "@/lib/seo";
 
 export const Route = createFileRoute("/speak")({
@@ -12,7 +11,7 @@ export const Route = createFileRoute("/speak")({
   component: Speak,
 });
 
-const LINE = "Sure! What size would you like — small, medium or large?".split(" ");
+const LINE = "Hi! What can I get started for you?".split(" ");
 
 function Speak() {
   const s = useSignify();
@@ -31,21 +30,29 @@ function Speak() {
   const heard = LINE.slice(0, n);
   return (
     <div className="flex flex-1 flex-col">
-      <TopBar back="/translate" />
-      <div className="flex items-center justify-between px-6 pt-4">
-        <span role="status" className="label-caps text-[11px] font-semibold">{on ? "● Listening" : "Mic paused"}</span>
-        <AgentChip />
+      <div className="flex items-center justify-between px-5 pt-5">
+        <StatusPill dot={on ? "bg-foreground" : "bg-muted-foreground"}>{on ? "Listening…" : "Mic paused"}</StatusPill>
+        <Link to="/translate" aria-label="Close" className="grid h-11 w-11 place-items-center rounded-full border-2 border-foreground">
+          <X className="h-5 w-5" />
+        </Link>
       </div>
-      <p aria-live="polite" className="flex-1 px-6 pt-6 text-[34px] font-bold leading-tight">
-        {heard.map((w, i) => <span key={i} className={i >= n - 2 && n < LINE.length ? "text-soft-headline" : ""}>{w} </span>)}
-        {n === 0 && <span className="text-muted-foreground">Start talking…</span>}
-      </p>
-      <div className="grid place-items-center py-4">
+      <div className="grid place-items-center pt-10">
         <button onClick={() => setOn(!on)} aria-pressed={on} aria-label={on ? "Pause microphone" : "Resume microphone"}
-          className="grid h-24 w-24 place-items-center rounded-full border-2 border-primary bg-primary">
-          {on ? <Mic className="h-10 w-10" /> : <MicOff className="h-10 w-10" />}
+          className="grid h-28 w-28 place-items-center rounded-full border-2 border-foreground/30 bg-muted">
+          {on ? <Mic className="h-9 w-9" /> : <MicOff className="h-9 w-9" />}
         </button>
-        <p className="mt-2 text-sm text-muted-foreground">Gray words = still hearing</p>
+        <div aria-hidden className="mt-4 flex h-8 items-center gap-1">
+          {[10, 22, 14, 30, 18, 26, 12, 20, 8].map((h, i) => (
+            <span key={i} className={on ? "w-1 rounded-full bg-soft-headline animate-pulse" : "w-1 rounded-full bg-muted"} style={{ height: h, animationDelay: `${i * 90}ms` }} />
+          ))}
+        </div>
+      </div>
+      <div className="flex-1 px-6 pt-8">
+        <p aria-live="polite" className="headline text-[34px] leading-[1.05]">
+          {heard.map((w, i) => <span key={i} className={i >= n - 3 && n < LINE.length ? "text-soft-headline" : ""}>{w} </span>)}
+          {n === 0 && <span className="text-soft-headline">Start talking…</span>}
+        </p>
+        <p className="mt-3 text-sm text-muted-foreground">Live transcript — gray words are still being heard.</p>
       </div>
       <div className="grid gap-2 px-6 pb-20">
         <Pill variant="mint" onClick={() => nav({ to: "/captions" })}>Show to Deaf person</Pill>

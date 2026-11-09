@@ -14,7 +14,7 @@ function Home() {
       <div className="flex flex-1 flex-col justify-between px-6 pb-20 pt-10">
         <Headline dark="Hello Sam!" soft="What would you like to do today?" className="text-[46px]" />
         <nav className="grid gap-3" aria-label="Main">
-          <PillLink to="/translate" variant="mint">Translate a conversation</PillLink>
+          <PillLink to="/translate">Translate a conversation</PillLink>
           <PillLink to="/messages">Check your messages</PillLink>
           <PillLink to="/community">Community</PillLink>
           <PillLink to="/memory">Conversation memory</PillLink>

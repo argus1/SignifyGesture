@@ -28,7 +28,7 @@ export function BridgeSimulator() {
       await go(800);
       bridge().onEngineStatusChange("listening");
       bridge().onEngineStatusChange("tracking");
-      ref.current.addCaption("other", "Hi! What can I get for you?");
+      ref.current.addCaption("other", "Hi! What can I get started for you?");
       await go(1600);
       for (const g of ["HELLO", "I", "WANT", "ICED"]) { bridge().onSignDetected({ gloss: g, confidence: 0.93, alternatives: [], isFinal: true }); await go(600); }
       bridge().onSignDetected({ gloss: "LATTE", confidence: 0.58, alternatives: [{ gloss: "MILK", confidence: 0.31 }, { gloss: "COFFEE", confidence: 0.08 }] });
