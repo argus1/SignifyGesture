@@ -2,14 +2,18 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Volume2, VolumeX, Keyboard, ArrowUp, Check, Undo2, Hand, AudioLines, type LucideIcon } from "lucide-react";
 import { useNativeBridge, useSignify, type Caption } from "@/lib/signify-store";
-import { triggerTTSPlayback } from "@/lib/nativeBridge";
+import { isNativeHost, triggerTTSPlayback } from "@/lib/nativeBridge";
 import { CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
 import { AgentChip, RepairCard, TypingSuggestion } from "@/components/signify/agent";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { seo } from "@/lib/seo";
 
+/** One conversation screen, two modes: "sign" (camera, Sam signs) and "speech" (white, the other person talks, Sam reads). */
+export type ConversationMode = "sign" | "speech";
 export const Route = createFileRoute("/sign")({
+  validateSearch: (search: Record<string, unknown>): { mode?: ConversationMode } => (search["mode"] === "speech" ? { mode: "speech" } : {}),
   head: () => seo("Conversation", "Live sign ⇄ speech conversation with captions and agent repair."),
   component: Conversation,
 });
@@ -61,14 +65,14 @@ function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
  * with the status underneath, sitting just above the controls. A shimmer runs along the line;
  * faster while someone is signing or talking, dim while it waits on you.
  */
-function ListeningLight({ status, busy, waiting }: { status: string; busy: boolean; waiting: boolean }) {
+function ListeningLight({ status, busy, waiting, light = false }: { status: string; busy: boolean; waiting: boolean; light?: boolean }) {
   return (
     <div role="status" className={cn("listen-light mb-2 flex flex-col items-center", busy && "listen-busy", waiting && "listen-waiting")}>
       <div aria-hidden className="relative h-7 w-full">
         <span className="listen-cone absolute left-1/2 top-0 h-7 w-full -translate-x-1/2" />
         <span className="listen-line absolute left-1/2 top-0 h-px w-full -translate-x-1/2" />
       </div>
-      <span className="-mt-3 text-sm font-semibold text-white/90">{status}…</span>
+      <span className={cn("-mt-3 text-sm font-semibold", light ? "text-muted-foreground" : "text-white/90")}>{status}…</span>
     </div>
   );
 }
@@ -83,21 +87,22 @@ function LiveBars() {
 }
 
 /** Round glass button that floats on the camera, same look as the home direction pills. */
-function GlassButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+function GlassButton({ icon: Icon, label, onClick, light = false }: { icon: LucideIcon; label: string; onClick: () => void; light?: boolean }) {
   return (
     <button onClick={onClick} aria-label={label}
-      className="grid h-11 w-11 place-items-center rounded-full bg-background/85 backdrop-blur-md active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40">
+      className={cn("grid h-11 w-11 place-items-center rounded-full backdrop-blur-md active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40", light ? "bg-muted" : "bg-background/85")}>
       <Icon className="h-5 w-5" />
     </button>
   );
 }
 
 /** One control in the dark glass bar — same shape and states as the home tab bar. */
-function BarToggle({ icon: Icon, label, on, onClick }: { icon: LucideIcon; label: string; on: boolean; onClick: () => void }) {
+function BarToggle({ icon: Icon, label, on, onClick, light = false }: { icon: LucideIcon; label: string; on: boolean; onClick: () => void; light?: boolean }) {
   return (
     <button onClick={onClick} aria-pressed={on}
       className={cn("flex h-14 flex-col items-center justify-center gap-0.5 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40",
-        on ? "bg-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)]" : "text-white/60 active:bg-white/10")}>
+        light ? (on ? "bg-black/[0.07]" : "text-muted-foreground active:bg-black/5")
+          : on ? "bg-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)]" : "text-white/60 active:bg-white/10")}>
       <Icon className="h-5 w-5" aria-hidden />
       <span className="text-[11px] font-semibold leading-none">{label}</span>
     </button>
@@ -109,6 +114,8 @@ function BarToggle({ icon: Icon, label, on, onClick }: { icon: LucideIcon; label
  * Top: close · status · agent. Bottom: one caption card + a dark glass control bar.
  */
 function Conversation() {
+  const { mode = "sign" } = Route.useSearch();
+  const speech = mode === "speech";
   const s = useSignify();
   const engine = useNativeBridge();
   const nav = useNavigate();
@@ -129,37 +136,61 @@ function Conversation() {
   const latestSigned = [...s.captions].reverse().find((c) => c.speaker === "sam" && c.gloss)?.id;
   const last = s.captions[s.captions.length - 1];
   const hearing = last?.speaker === "other" && !last.final; // mic is picking up the other person right now
-  const status = hearing ? "They're talking" : engine.tracking === "lost" ? "Show your hands" : s.pending ? "Checking a sign"
+  // Speech mode in the browser: the other person "talks" a moment after you arrive (natively the mic does this)
+  useEffect(() => {
+    if (!speech || s.captions.length > 0 || isNativeHost()) return;
+    let cancelled = false;
+    const words = "Hi! What can I get started for you?".split(" ");
+    const timers = words.map((_, i) => setTimeout(() => {
+      if (!cancelled) window.NativeASLBridge?.onSpeechTranscribed({ text: words.slice(0, i + 1).join(" "), isFinal: i === words.length - 1 });
+    }, 1200 + i * 320));
+    return () => { cancelled = true; timers.forEach(clearTimeout); };
+  }, [speech]); // eslint-disable-line react-hooks/exhaustive-deps
+  const status = speech ? (hearing ? "They're talking" : engine.ttsPlaying ? "Speaking for you" : "Listening") : hearing ? "They're talking" : engine.tracking === "lost" ? "Show your hands" : s.pending ? "Checking a sign"
     : engine.ttsPlaying ? "Speaking for you" : engine.tracking === "tracking" ? "Signing" : "Listening";
 
   return (
     <div className="relative flex flex-1 flex-col">
-      {/* Full-screen camera with the same scrims as home */}
-      <div className="absolute inset-0">
+      {/* Full-screen camera with the same scrims as home (speech mode: plain white, like home's Speech side) */}
+      {speech && <div aria-hidden className="absolute inset-0 bg-background" />}
+      <div className={cn("absolute inset-0", speech && "hidden")}>
         <CameraViewport className="absolute inset-0" label="Native camera" />
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/45 to-transparent" />
         <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/50 to-transparent" />
       </div>
-      <div aria-hidden className="absolute inset-0 -z-10 bg-neutral-900" />
+      <div aria-hidden className={cn("absolute inset-0 -z-10", speech ? "bg-background" : "bg-neutral-900")} />
 
       <div className="relative z-10 flex flex-1 flex-col">
         {/* Top row mirrors home's header: left · center · right */}
-        <header className="grid grid-cols-[44px_1fr_44px] items-center px-4 pt-4 pb-2">
-          <GlassButton icon={ChevronLeft} label={empty ? "Back" : "End conversation and see recap"} onClick={() => nav({ to: empty ? "/home" : "/recap" })} />
+        <header className="grid grid-cols-[44px_1fr_44px] items-start px-4 pt-4 pb-2">
+          <GlassButton light={speech} icon={ChevronLeft} label={empty ? "Back" : "End conversation and see recap"} onClick={() => nav({ to: empty ? "/home" : "/recap" })} />
           <span />
-          <AgentChip />
+          {/* Right column: agent, and under it the voice on/off (a setting, not a mode) */}
+          <div className="flex flex-col items-center gap-2">
+            <AgentChip {...(speech ? { className: "bg-muted" } : {})} />
+            <GlassButton light={speech} icon={s.readAloud ? Volume2 : VolumeX} label={s.readAloud ? "Voice on: your words are spoken out loud. Turn off" : "Voice off. Turn on"}
+              onClick={() => { s.setReadAloud(!s.readAloud); toast(s.readAloud ? "Voice off: your words won't be spoken" : "Voice on: your words are spoken out loud"); }} />
+          </div>
         </header>
 
-        {/* Center: hand cue until the first caption arrives */}
+        {/* Center: hand cue (sign mode) or voice bars (speech mode), same as the home screen */}
         <div className="relative flex flex-1 items-center justify-center">
-          <div className={cn("transition-all duration-500", empty || signingNow ? "scale-100 opacity-100" : "scale-90 opacity-0")}>
-            <HandTrackingCue gloss={signingNow ? s.liveSign?.gloss : null} signKey={s.liveSign?.at} />
-          </div>
+          {speech ? (
+            <div aria-hidden className={cn("flex h-24 items-center justify-center gap-1.5 transition-opacity duration-500", hearing || empty ? "opacity-100" : "opacity-40")}>
+              {[18, 34, 24, 50, 30, 64, 40, 56, 28, 46, 22, 38, 16].map((hgt, i) => (
+                <span key={i} className={cn("w-2 rounded-full bg-primary", hearing && "voice-bar")} style={{ height: hearing ? hgt : Math.max(8, hgt / 4), animationDelay: `${i * 90}ms`, transition: "height 300ms ease" }} />
+              ))}
+            </div>
+          ) : (
+            <div className={cn("transition-all duration-500", empty || signingNow ? "scale-100 opacity-100" : "scale-90 opacity-0")}>
+              <HandTrackingCue gloss={signingNow ? s.liveSign?.gloss : null} signKey={s.liveSign?.at} />
+            </div>
+          )}
         </div>
 
         {/* Caption card: hidden until something is said, then slides up */}
         {(!empty || typing || s.pending || s.suggestTyping) && (
-        <section aria-label="Live captions" className={cn("mx-4 mb-3 rounded-[2rem] bg-background shadow-[0_8px_30px_rgba(0,0,0,0.18)] animate-in fade-in slide-in-from-bottom-4 duration-300", empty ? "p-3" : "px-4 py-4")}>
+        <section aria-label="Live captions" className={cn("mx-4 mb-3 rounded-[2rem] bg-background animate-in fade-in slide-in-from-bottom-4 duration-300", speech ? "border border-foreground/10 shadow-[0_8px_30px_rgba(0,0,0,0.08)]" : "shadow-[0_8px_30px_rgba(0,0,0,0.18)]", empty ? "p-3" : "px-4 py-4")}>
           <div ref={scroller} aria-live="polite" className="max-h-56 space-y-3 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_20px)] pt-2">
             {s.captions.map((c) => <Bubble key={c.id} c={c} latest={c.id === latestSigned} />)}
           </div>
@@ -195,13 +226,20 @@ function Conversation() {
         )}
 
         {/* Hidden while typing: hands are on the keyboard, not signing */}
-        {!typing && <ListeningLight status={status} busy={hearing || signingNow || engine.ttsPlaying} waiting={!!s.pending || engine.tracking === "lost"} />}
+        {!typing && <ListeningLight light={speech} status={status} busy={hearing || signingNow || engine.ttsPlaying} waiting={!speech && (!!s.pending || engine.tracking === "lost")} />}
 
         {/* Dark glass control bar, same as the home tab bar */}
+        {/* Glass control bar: dark over the camera, light on white (same as the home tab bar) */}
         <nav aria-label="Conversation controls"
-          className="mx-4 mb-4 grid grid-cols-2 rounded-full border border-white/15 bg-neutral-900/80 p-1.5 text-white backdrop-blur-xl backdrop-saturate-150 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_30px_rgba(0,0,0,0.25)]">
-          <BarToggle icon={s.readAloud ? Volume2 : VolumeX} label={s.readAloud ? "Audio" : "Audio off"} on={s.readAloud} onClick={() => s.setReadAloud(!s.readAloud)} />
-          <BarToggle icon={Keyboard} label="Type" on={typing} onClick={() => { if (typing) s.cancelTyped(); setTyping(!typing); }} />
+          className={cn("mx-4 mb-4 grid grid-cols-3 rounded-full border p-1.5 backdrop-blur-xl backdrop-saturate-150",
+            speech ? "border-black/5 bg-white/85 text-foreground shadow-[0_8px_30px_rgba(0,0,0,0.12),0_1px_3px_rgba(0,0,0,0.06)]"
+              : "border-white/15 bg-neutral-900/80 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_30px_rgba(0,0,0,0.25)]")}>
+          {/* Same bar in both modes: the mode you're in is highlighted (gray = you are here), the other is one tap away */}
+          <BarToggle light={speech} icon={Hand} label="Signing" on={!speech}
+            onClick={() => { if (speech) { setTyping(false); nav({ to: "/sign", search: {} }); } }} />
+          <BarToggle light={speech} icon={Keyboard} label="Type" on={typing} onClick={() => { if (typing) s.cancelTyped(); setTyping(!typing); }} />
+          <BarToggle light={speech} icon={AudioLines} label="Speech" on={speech}
+            onClick={() => { if (!speech) { s.cancelTyped(); setTyping(false); nav({ to: "/sign", search: { mode: "speech" } }); } }} />
         </nav>
       </div>
     </div>

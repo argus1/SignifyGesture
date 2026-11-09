@@ -84,7 +84,8 @@ function Home() {
   const nav = useNavigate();
   const [fromAsl, setFromAsl] = useState(true); // pill labels (swap when the pills land)
   const [scene, setScene] = useState(true); // everything else (flips the instant you tap, so the fade runs with the pills)
-  const start = () => nav({ to: scene ? "/sign" : "/speak" });
+  // One conversation screen: camera mode for signing, white speech mode when the other person talks (mic starts right away)
+  const start = () => nav({ to: "/sign", search: scene ? {} : { mode: "speech" } });
 
   return (
     <div className="relative flex flex-1 flex-col">
