@@ -1,14 +1,27 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
+import type {
+  Alternative,
+  EngineStatusPayload,
+  NativeASLBridge,
+  SentenceTranslatedPayload,
+  SignDetectedPayload,
+  SpeechTranscribedPayload,
+  TrackingState,
+} from "@/types/nativeBridge";
+import { isNativeHost, triggerAvatarReplay, triggerCameraToggle, triggerTTSPlayback } from "@/lib/nativeBridge";
 
-export type Alt = { gloss: string; confidence: number };
-export type SignEvent = { gloss: string; confidence: number; alternatives?: Alt[]; isFinal?: boolean; timestamp?: number };
+export type Alt = Alternative;
+export type SignEvent = Pick<SignDetectedPayload, "gloss" | "confidence"> & Partial<Omit<SignDetectedPayload, "gloss" | "confidence">>;
 export type Speaker = "sam" | "other";
-export type Caption = { id: number; speaker: Speaker; text: string; final: boolean };
+/** gloss = the signs it came from (e.g. "HELLO I WANT ICED OAT-MILK LATTE"); typed = came from the keyboard, not signing. */
+export type Caption = { id: number; speaker: Speaker; text: string; final: boolean; gloss?: string; typed?: boolean };
+export type SayExtra = { gloss?: string; typed?: boolean };
 export type Correction = { heard: string; meant: string };
 export type AgentStep = "translate" | "check" | "repair" | "recap";
+/** UI feedback state shown to the user (listening / translating / checking / speaking). */
 export type EngineStatus = "idle" | "listening" | "translating" | "checking" | "speaking";
-export type Tracking = "idle" | "tracking" | "lost";
+export type Tracking = TrackingState;
 
 type Snapshot = { captions: Caption[]; corrections: Correction[] };
 
@@ -16,12 +29,29 @@ export const DEFAULT_THRESHOLD = 0.75;
 export const STREAK_LIMIT = 3;
 
 /** Pure decision used by the agent; exported for tests. */
-export function decideSign(sign: SignEvent, threshold: number, corrections: Correction[], paused: boolean) {
+export function decideSign(sign: Pick<SignDetectedPayload, "gloss" | "confidence">, threshold: number, corrections: Correction[], paused: boolean) {
   const learned = corrections.find((c) => c.heard.toLowerCase() === sign.gloss.toLowerCase());
   if (learned) return { kind: "learned" as const, text: learned.meant };
   if (paused || sign.confidence >= threshold) return { kind: "accept" as const, text: sign.gloss };
   return { kind: "repair" as const, text: sign.gloss };
 }
+
+/* ---------- Engine context: high-frequency native status, kept separate so it doesn't re-render conversation UI ---------- */
+
+type EngineCtx = {
+  cameraActive: boolean;
+  tracking: Tracking;
+  latencyMs: number;
+  ttsPlaying: boolean;
+  devPreview: boolean;
+  setDevPreview: (v: boolean) => void;
+  triggerCameraToggle: typeof triggerCameraToggle;
+  triggerTTSPlayback: typeof triggerTTSPlayback;
+  triggerAvatarReplay: typeof triggerAvatarReplay;
+};
+const EngineContext = createContext<EngineCtx | null>(null);
+
+/* ---------- Conversation context: captions + agent ---------- */
 
 type Ctx = {
   captions: Caption[];
@@ -34,33 +64,39 @@ type Ctx = {
   step: AgentStep;
   lastAction: { text: string; reason: string } | null;
   engine: EngineStatus;
+  /** Mirrors engine tracking for screens that show it next to captions. */
   tracking: Tracking;
-  tts: "idle" | "playing";
   readAloud: boolean;
   setReadAloud: (v: boolean) => void;
-  onSignDetected: (s: SignEvent) => void;
-  onSentenceTranslated: (p: { text: string; speaker?: Speaker }) => void;
-  onEngineStatusChange: (s: EngineStatus | Tracking) => void;
-  onTTSPlaybackState: (s: "idle" | "playing") => void;
+  /** Add a finished sentence from the UI (typing, quick replies). Speaks it if read-aloud is on. */
+  say: (text: string, speaker?: Speaker, extra?: SayExtra) => void;
+  /** Caption text size multiplier (1 = default). */
+  textScale: number;
+  setTextScale: (v: number) => void;
+  /** Agent panel open (so other parts of the screen can open it). */
+  /** The sign the camera is seeing right now (for the live hand animation). at = when it arrived. */
+  liveSign: { gloss: string; at: number } | null;
+  agentOpen: boolean;
+  setAgentOpen: (v: boolean) => void;
   addCaption: (speaker: Speaker, text: string, final?: boolean) => void;
   resolveRepair: (meant: string | null) => void;
   dismissTyping: () => void;
   undo: () => void;
   override: (text: string) => void;
+  /** The word the agent most recently fixed (repair pick or learned swap) — shows the inline Undo. Cleared when the sentence completes. */
+  lastFix: string | null;
+  /** True after "Type the right word" until the word is sent (or typing is closed). */
+  awaitingTyped: boolean;
+  fixTyped: (word: string) => void;
+  cancelTyped: () => void;
   setThreshold: (n: number) => void;
   setPaused: (b: boolean) => void;
   setStep: (s: AgentStep) => void;
   reset: () => void;
-};
+} & NativeASLBridge;
 
 const SignifyCtx = createContext<Ctx | null>(null);
 let nextId = 1;
-
-declare global {
-  interface Window {
-    NativeASLBridge?: Pick<Ctx, "onSignDetected" | "onSentenceTranslated" | "onEngineStatusChange" | "onTTSPlaybackState">;
-  }
-}
 
 export function SignifyProvider({ children }: { children: ReactNode }) {
   const [captions, setCaptions] = useState<Caption[]>([]);
@@ -72,13 +108,22 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   const [corrections, setCorrections] = useState<Correction[]>([]);
   const [step, setStep] = useState<AgentStep>("translate");
   const [lastAction, setLastAction] = useState<Ctx["lastAction"]>(null);
+  const [lastFix, setLastFix] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineStatus>("idle");
-  const [tracking, setTracking] = useState<Tracking>("idle");
-  const [tts, setTts] = useState<"idle" | "playing">("idle");
   const [readAloud, setReadAloud] = useState(true);
+  const [textScale, setTextScale] = useState(1);
+  const [agentOpen, setAgentOpen] = useState(false);
+  const [liveSign, setLiveSign] = useState<{ gloss: string; at: number } | null>(null);
+  // engine (native) state
+  const [cameraActive, setCameraActive] = useState(false);
+  const [tracking, setTracking] = useState<Tracking>("idle");
+  const [latencyMs, setLatencyMs] = useState(0);
+  const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [devPreview, setDevPreview] = useState(false);
+
   const history = useRef<Snapshot[]>([]);
-  const state = useRef({ captions, corrections, threshold, paused, streak });
-  state.current = { captions, corrections, threshold, paused, streak };
+  const state = useRef({ captions, corrections, threshold, paused, streak, readAloud });
+  state.current = { captions, corrections, threshold, paused, streak, readAloud };
 
   const snapshot = () => history.current.push({ captions: state.current.captions, corrections: state.current.corrections });
 
@@ -92,9 +137,10 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const onSignDetected = useCallback((s: SignEvent) => {
+  const onSignDetected = useCallback((s: SignDetectedPayload) => {
     const { threshold, corrections, paused, streak } = state.current;
     setTracking("tracking");
+    setLiveSign({ gloss: s.gloss, at: Date.now() });
     setEngine("checking");
     setStep("check");
     const d = decideSign(s, threshold, corrections, paused);
@@ -116,33 +162,52 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     setStreak(0);
     setStep("translate");
     setEngine("translating");
+    if (d.kind === "learned") setLastFix(d.text.toLowerCase());
     setLastAction(
       d.kind === "learned"
         ? { text: `Swapped “${s.gloss.toLowerCase()}” for “${d.text.toLowerCase()}”`, reason: "Used a learned correction" }
-        : { text: `Added “${s.gloss.toLowerCase()}”`, reason: paused ? "Agent paused — no checking" : `${Math.round(s.confidence * 100)}% confident` },
+        : { text: `Added “${s.gloss.toLowerCase()}”`, reason: paused ? "Agent is off, so nothing was checked" : `${Math.round(s.confidence * 100)}% confident` },
     );
   }, [appendSam]);
 
-  const onSentenceTranslated = useCallback(({ text, speaker = "sam" }: { text: string; speaker?: Speaker }) => {
+  const say = useCallback((text: string, speaker: Speaker = "sam", extra: SayExtra = {}) => {
     snapshot();
+    setLastFix(null);
     setCaptions((cs) => {
       const last = cs[cs.length - 1];
       const base = last && last.speaker === speaker && !last.final ? cs.slice(0, -1) : cs;
-      return [...base, { id: nextId++, speaker, text, final: true }];
+      return [...base, { id: nextId++, speaker, text, final: true, ...extra }];
     });
-    setEngine(speaker === "sam" && readAloud ? "speaking" : "listening");
+    const speak = speaker === "sam" && state.current.readAloud;
+    if (speak) triggerTTSPlayback(text);
+    setEngine(speak ? "speaking" : "listening");
     setStep("translate");
     setLastAction({ text: speaker === "sam" ? "Turned signs into an English sentence" : "Captioned the hearing person", reason: "Sentence complete" });
-  }, [readAloud]);
+  }, []);
 
-  const onEngineStatusChange = useCallback((s: EngineStatus | Tracking) => {
-    if (s === "tracking" || s === "lost") {
-      setTracking(s);
-      if (s === "lost") setLastAction({ text: "Hands out of view", reason: "Tracking lost — waiting for hands" });
-    } else if (s === "idle") {
-      setEngine("idle");
-      setTracking("idle");
-    } else setEngine(s);
+  const onSentenceTranslated = useCallback(({ naturalEnglish, rawGloss }: SentenceTranslatedPayload) => say(naturalEnglish, "sam", { gloss: rawGloss }), [say]);
+
+  const onEngineStatusChange = useCallback((st: EngineStatusPayload) => {
+    setCameraActive(st.cameraActive);
+    setTracking(st.trackingState);
+    setLatencyMs(st.inferenceLatencyMs);
+    if (st.trackingState === "lost") setLastAction({ text: "Hands out of view", reason: "Can't see your hands, waiting for them" });
+    if (!st.cameraActive) setEngine("idle");
+    else setEngine((e) => (e === "idle" ? "listening" : e));
+  }, []);
+
+  // The hearing person talking into the mic: partial words stream into one "Barista" bubble, then it finalizes.
+  const ttsOn = useRef(false);
+  const onSpeechTranscribed = useCallback(({ text, isFinal }: SpeechTranscribedPayload) => {
+    if (ttsOn.current) return; // never caption the app's own voice
+    addCaptionRef.current("other", text, isFinal);
+    setEngine(isFinal ? "listening" : "translating");
+  }, []);
+
+  const onTTSPlaybackState = useCallback((isPlaying: boolean) => {
+    ttsOn.current = isPlaying;
+    setTtsPlaying(isPlaying);
+    setEngine(isPlaying ? "speaking" : "listening");
   }, []);
 
   const addCaption = useCallback((speaker: Speaker, text: string, final = true) => {
@@ -155,11 +220,16 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  const addCaptionRef = useRef(addCaption);
+  addCaptionRef.current = addCaption;
+
   const resolveRepair = useCallback((meant: string | null) => {
     const p = pending;
     if (!p) return;
     setPending(null);
     if (meant === null) {
+      typedFor.current = p; // remember which sign they're fixing by typing
+      setAwaitingTyped(true);
       setSuggestTyping(true);
       setLastAction({ text: "Signer chose to type instead", reason: "None of the options were right" });
       return;
@@ -168,20 +238,44 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     appendSam(meant.toLowerCase());
     if (meant.toLowerCase() !== p.gloss.toLowerCase()) {
       setCorrections((c) => [{ heard: p.gloss, meant }, ...c.filter((x) => x.heard !== p.gloss)]);
-      toast.success("Got it — I'll remember that");
+      toast.success("Got it, I'll remember that");
     } else {
       toast.success(`Confirmed “${meant.toLowerCase()}”`);
     }
     setStreak(0);
     setStep("translate");
+    setLastFix(meant.toLowerCase());
     setLastAction({ text: `Confirmed “${meant.toLowerCase()}”`, reason: "Signer picked it" });
   }, [pending, appendSam]);
+
+  // "Type the right word": the typed word joins the sentence in progress (it doesn't replace it) and is learned like a pick
+  const typedFor = useRef<SignEvent | null>(null);
+  const [awaitingTyped, setAwaitingTyped] = useState(false);
+  const fixTyped = useCallback((word: string) => {
+    const p = typedFor.current;
+    const w = word.trim().toLowerCase();
+    typedFor.current = null;
+    setAwaitingTyped(false);
+    if (!w) return;
+    snapshot();
+    appendSam(w);
+    if (p && w !== p.gloss.toLowerCase()) {
+      setCorrections((c) => [{ heard: p.gloss, meant: w }, ...c.filter((x) => x.heard !== p.gloss)]);
+      toast.success("Got it, I'll remember that");
+    }
+    setStreak(0);
+    setStep("translate");
+    setLastFix(w);
+    setLastAction({ text: `Used “${w}”`, reason: "You typed the right word" });
+  }, [appendSam]);
+  const cancelTyped = useCallback(() => { typedFor.current = null; setAwaitingTyped(false); }, []);
 
   const undo = useCallback(() => {
     const prev = history.current.pop();
     if (!prev) { toast("Nothing to undo"); return; }
     setCaptions(prev.captions);
     setCorrections(prev.corrections);
+    setLastFix(null);
     setLastAction({ text: "Undid the last change", reason: "You asked to undo" });
   }, []);
 
@@ -199,25 +293,46 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   const reset = useCallback(() => {
     history.current = [];
     setCaptions([]); setPending(null); setStreak(0); setSuggestTyping(false);
-    setStep("translate"); setLastAction(null); setEngine("idle"); setTracking("idle");
+    setStep("translate"); setLastAction(null); setLastFix(null); setLiveSign(null); typedFor.current = null; setAwaitingTyped(false); setEngine("idle"); setTracking("idle");
   }, []);
 
   const value = useMemo<Ctx>(() => ({
-    captions, pending, streak, suggestTyping, threshold, paused, corrections, step, lastAction, engine, tracking, tts, readAloud,
-    setReadAloud, onSignDetected, onSentenceTranslated, onEngineStatusChange, onTTSPlaybackState: setTts, addCaption, resolveRepair,
+    captions, pending, streak, suggestTyping, threshold, paused, corrections, step, lastAction, lastFix, engine, tracking, readAloud,
+    setReadAloud, awaitingTyped, fixTyped, cancelTyped, textScale, setTextScale, liveSign, agentOpen, setAgentOpen, say, onSignDetected, onSentenceTranslated, onEngineStatusChange, onTTSPlaybackState, onSpeechTranscribed, addCaption, resolveRepair,
     dismissTyping: () => { setSuggestTyping(false); setStreak(0); }, undo, override, setThreshold, setPaused, setStep, reset,
-  }), [captions, pending, streak, suggestTyping, threshold, paused, corrections, step, lastAction, engine, tracking, tts, readAloud,
-    onSignDetected, onSentenceTranslated, onEngineStatusChange, addCaption, resolveRepair, undo, override, reset]);
+  }), [awaitingTyped, fixTyped, cancelTyped, liveSign, agentOpen, textScale, captions, pending, streak, suggestTyping, threshold, paused, corrections, step, lastAction, lastFix, engine, tracking, readAloud,
+    say, onSignDetected, onSentenceTranslated, onEngineStatusChange, onTTSPlaybackState, onSpeechTranscribed, addCaption, resolveRepair, undo, override, reset]);
+
+  const engineValue = useMemo<EngineCtx>(() => ({
+    cameraActive, tracking, latencyMs, ttsPlaying, devPreview, setDevPreview,
+    triggerCameraToggle, triggerTTSPlayback, triggerAvatarReplay,
+  }), [cameraActive, tracking, latencyMs, ttsPlaying, devPreview]);
 
   useEffect(() => {
-    window.NativeASLBridge = { onSignDetected, onSentenceTranslated, onEngineStatusChange, onTTSPlaybackState: setTts };
-  }, [onSignDetected, onSentenceTranslated, onEngineStatusChange]);
+    if (isNativeHost()) document.documentElement.setAttribute("data-native-host", "");
+  }, []);
 
-  return <SignifyCtx.Provider value={value}>{children}</SignifyCtx.Provider>;
+  useEffect(() => {
+    window.NativeASLBridge = { onSignDetected, onSentenceTranslated, onEngineStatusChange, onTTSPlaybackState, onSpeechTranscribed };
+  }, [onSignDetected, onSentenceTranslated, onEngineStatusChange, onTTSPlaybackState, onSpeechTranscribed]);
+
+  return (
+    <EngineContext.Provider value={engineValue}>
+      <SignifyCtx.Provider value={value}>{children}</SignifyCtx.Provider>
+    </EngineContext.Provider>
+  );
 }
 
+/** Conversation + agent state. */
 export function useSignify() {
   const c = useContext(SignifyCtx);
   if (!c) throw new Error("useSignify outside provider");
+  return c;
+}
+
+/** Native engine status (camera, tracking, latency, TTS) and outbound commands to Swift. */
+export function useNativeBridge() {
+  const c = useContext(EngineContext);
+  if (!c) throw new Error("useNativeBridge outside provider");
   return c;
 }

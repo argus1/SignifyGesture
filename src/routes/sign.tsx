@@ -1,77 +1,192 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
-import { X, Volume2, VolumeX } from "lucide-react";
-import { useSignify } from "@/lib/signify-store";
-import { Pill, StatusPill } from "@/components/signify/ui";
-import { AgentChip, RepairCard, TypingSuggestion, ExpandToggle } from "@/components/signify/agent";
-import { Input } from "@/components/ui/input";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useRef, useState } from "react";
+import { ChevronLeft, Volume2, VolumeX, Keyboard, ArrowUp, Check, Undo2, Hand, AudioLines, type LucideIcon } from "lucide-react";
+import { useNativeBridge, useSignify, type Caption } from "@/lib/signify-store";
+import { triggerTTSPlayback } from "@/lib/nativeBridge";
+import { StatusPill } from "@/components/signify/ui";
+import { CameraViewport } from "@/components/signify/CameraViewport";
+import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
+import { AgentChip, RepairCard, TypingSuggestion } from "@/components/signify/agent";
 import { cn } from "@/lib/utils";
 import { seo } from "@/lib/seo";
 
 export const Route = createFileRoute("/sign")({
-  head: () => seo("I sign · Live", "Live sign translation with captions and agent repair."),
-  component: SignLive,
+  head: () => seo("Conversation", "Live sign ⇄ speech conversation with captions and agent repair."),
+  component: Conversation,
 });
 
-const QUICK = ["Medium, please", "Thank you!", "Can you repeat?"];
-
-function SignLive() {
-  const s = useSignify();
-  const nav = useNavigate();
+/**
+ * One line of the conversation, Google Translate style: your words on the right (mint), theirs on the left (gray).
+ * The small icon says how it came in: hand = signed, keyboard = typed, sound = heard by the mic (bars move while they're still talking).
+ * Like Google showing the original above the translation, your latest signed line shows the signs it came from
+ * ("HELLO I WANT ICED…") above the English. Tap an older line to see its signs again.
+ * Your lines get a replay button so the other person can hear them again.
+ */
+function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
+  const mine = c.speaker === "sam";
+  const { textScale } = useSignify();
   const [open, setOpen] = useState(false);
+  const showGloss = !!c.gloss && (latest || open);
+  const SourceIcon = c.typed ? Keyboard : Hand;
+  const icon = mine ? <SourceIcon className="h-4 w-4" /> : c.final ? <AudioLines className="h-4 w-4" /> : <LiveBars />;
+  return (
+    <div className={cn("flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
+      {mine && c.final && (
+        <button onClick={() => triggerTTSPlayback(c.text)} aria-label={`Say “${c.text}” again`}
+          className="mb-1 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted active:scale-95 transition-transform">
+          <Volume2 className="h-4 w-4" />
+        </button>
+      )}
+      <div onClick={c.gloss && !latest ? () => setOpen(!open) : undefined}
+        className={cn("max-w-[85%] rounded-[1.5rem] px-4 py-2.5", mine ? "bg-accent" : "bg-muted", c.gloss && !latest && "cursor-pointer")}>
+        <span className="sr-only">{mine ? (c.typed ? "You typed:" : "You signed:") : "They said:"}</span>
+        {showGloss && (
+          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
+            <span aria-hidden>{icon}</span>
+            <span className="sr-only">Signs:</span>{c.gloss}
+          </p>
+        )}
+        <p style={{ fontSize: `${1.25 * textScale}rem` }} className={cn("font-semibold leading-snug", mine ? "text-mint-ink" : "text-foreground", !c.final && "opacity-70")}>
+          {!showGloss && (
+            <span aria-hidden className="mr-1.5 inline-flex h-4 translate-y-[1px] items-center align-baseline text-muted-foreground">{icon}</span>
+          )}
+          {c.text}
+        </p>
+      </div>
+    </div>
+  );
+}
+
+/** Tiny moving sound bars: the mic is hearing them right now. */
+function LiveBars() {
+  return (
+    <span className="flex h-4 items-center gap-[2px]">
+      {[8, 14, 10].map((h, i) => <span key={i} className="voice-bar w-[3px] rounded-full bg-current" style={{ height: h, animationDelay: `${i * 120}ms` }} />)}
+    </span>
+  );
+}
+
+/** Round glass button that floats on the camera, same look as the home direction pills. */
+function GlassButton({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} aria-label={label}
+      className="grid h-11 w-11 place-items-center rounded-full bg-background/85 backdrop-blur-md active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40">
+      <Icon className="h-5 w-5" />
+    </button>
+  );
+}
+
+/** One control in the dark glass bar — same shape and states as the home tab bar. */
+function BarToggle({ icon: Icon, label, on, onClick }: { icon: LucideIcon; label: string; on: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} aria-pressed={on}
+      className={cn("flex h-14 flex-col items-center justify-center gap-0.5 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40",
+        on ? "bg-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)]" : "text-white/60 active:bg-white/10")}>
+      <Icon className="h-5 w-5" aria-hidden />
+      <span className="text-[11px] font-semibold leading-none">{label}</span>
+    </button>
+  );
+}
+
+/**
+ * Conversation, laid out like home: camera fills the screen, controls float on top.
+ * Top: close · status · agent. Bottom: one caption card + a dark glass control bar.
+ */
+function Conversation() {
+  const s = useSignify();
+  const engine = useNativeBridge();
+  const nav = useNavigate();
+  const scroller = useRef<HTMLDivElement>(null);
+  // Keep the hand on screen (performing the sign) while signs are coming in; fade it ~1.6s after the last one
+  const [signingNow, setSigningNow] = useState(false);
+  useEffect(() => {
+    if (!s.liveSign) { setSigningNow(false); return; }
+    setSigningNow(true);
+    const t = setTimeout(() => setSigningNow(false), 1600);
+    return () => clearTimeout(t);
+  }, [s.liveSign]);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
-  const shown = open ? s.captions : s.captions.slice(-3);
-  const status = s.tracking === "lost" ? "Hands not visible" : s.pending ? "Checking a sign" : s.tracking === "tracking" ? "Signing detected" : "Waiting for hands";
+  // Whole conversation lives in the card; it scrolls and always jumps to the newest line
+  useEffect(() => { const el = scroller.current; if (el) el.scrollTop = el.scrollHeight; }, [s.captions]);
+  const empty = s.captions.length === 0;
+  const latestSigned = [...s.captions].reverse().find((c) => c.speaker === "sam" && c.gloss)?.id;
+  const last = s.captions[s.captions.length - 1];
+  const hearing = last?.speaker === "other" && !last.final; // mic is picking up the other person right now
+  const status = hearing ? "They're talking" : engine.tracking === "lost" ? "Show your hands" : s.pending ? "Checking a sign"
+    : engine.ttsPlaying ? "Speaking for you" : engine.tracking === "tracking" ? "Signing" : "Listening";
 
   return (
-    <div className="relative flex flex-1 flex-col bg-muted">
-      {/* Camera area: transparent-ish so the native camera layer can render underneath. */}
-      <div className="relative flex-1 min-h-[280px]">
-        <div className="absolute inset-0 grid place-items-center">
-          <span className="label-caps text-[11px] text-muted-foreground">Camera · your hands</span>
-        </div>
-        <div className="absolute left-5 right-5 top-5 flex items-center justify-between gap-2">
-          <StatusPill dot={s.tracking === "lost" ? "bg-warning" : "bg-foreground"}>Live · {status}</StatusPill>
-          <Link to="/recap" aria-label="End conversation and see recap" className="grid h-11 w-11 place-items-center rounded-full border-2 border-foreground bg-background">
-            <X className="h-5 w-5" />
-          </Link>
-        </div>
-        <div className="absolute bottom-8 right-5"><AgentChip /></div>
+    <div className="relative flex flex-1 flex-col">
+      {/* Full-screen camera with the same scrims as home */}
+      <div className="absolute inset-0">
+        <CameraViewport className="absolute inset-0" label="Native camera" />
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/45 to-transparent" />
+        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/50 to-transparent" />
       </div>
+      <div aria-hidden className="absolute inset-0 -z-10 bg-neutral-900" />
 
-      <section aria-label="Live captions" className="-mt-4 rounded-t-[2rem] bg-background px-5 pt-3 pb-20 shadow-[0_-8px_24px_rgba(0,0,0,0.06)]">
-        <ExpandToggle open={open} onToggle={() => setOpen(!open)} />
-        <div aria-live="polite" className={cn("mt-3 space-y-2 overflow-y-auto", open ? "max-h-[50dvh]" : "max-h-56")}>
-          {shown.length === 0 && <p className="text-xl text-muted-foreground">Start signing — your words appear here.</p>}
-          {shown.map((c) => (
-            <p key={c.id} className={cn("text-[22px] font-medium leading-tight", c.speaker === "sam" ? "text-mint-ink" : "text-foreground", !c.final && "opacity-70")}>
-              <span className="font-normal">{c.speaker === "sam" ? "You (signed): " : "Barista (spoken): "}</span>{c.text}
-            </p>
-          ))}
-        </div>
-        <div className="mt-3 space-y-3">
-          <div className="flex gap-2">
-            <Pill size="sm" className="whitespace-nowrap px-3 text-[10px]" onClick={() => s.setReadAloud(!s.readAloud)} aria-pressed={s.readAloud}>
-              {s.readAloud ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />} Read aloud: {s.readAloud ? "On" : "Off"}
-            </Pill>
-            <Pill size="sm" className="whitespace-nowrap px-3 text-[10px]" onClick={() => nav({ to: "/speak" })}>Switch to I speak</Pill>
+      <div className="relative z-10 flex flex-1 flex-col">
+        {/* Top row mirrors home's header: left · center · right */}
+        <header className="grid grid-cols-[44px_1fr_44px] items-center px-4 pt-4 pb-2">
+          <GlassButton icon={ChevronLeft} label={empty ? "Back" : "End conversation and see recap"} onClick={() => nav({ to: empty ? "/home" : "/recap" })} />
+          <div className="justify-self-center">
+            <StatusPill dot={engine.tracking === "lost" ? "bg-warning" : s.pending ? "bg-foreground" : "bg-primary"}>{status}</StatusPill>
           </div>
-          <RepairCard />
-          <TypingSuggestion onType={() => setTyping(true)} />
-          {typing && (
-            <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) { s.onSentenceTranslated({ text: draft.trim() }); setDraft(""); setTyping(false); } }}>
-              <label htmlFor="typed" className="sr-only">Type your message</label>
-              <Input id="typed" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Type your message…" className="h-12 rounded-full border-2 text-lg" />
-              <Pill size="sm" variant="mint" type="submit">Send</Pill>
-            </form>
+          <AgentChip />
+        </header>
+
+        {/* Center: hand cue until the first caption arrives */}
+        <div className="relative flex flex-1 items-center justify-center">
+          <div className={cn("transition-all duration-500", empty || signingNow ? "scale-100 opacity-100" : "scale-90 opacity-0")}>
+            <HandTrackingCue gloss={signingNow ? s.liveSign?.gloss : null} signKey={s.liveSign?.at} />
+          </div>
+        </div>
+
+        {/* Caption card: hidden until something is said, then slides up */}
+        {(!empty || typing || s.pending || s.suggestTyping) && (
+        <section aria-label="Live captions" className={cn("mx-4 mb-3 rounded-[2rem] bg-background shadow-[0_8px_30px_rgba(0,0,0,0.18)] animate-in fade-in slide-in-from-bottom-4 duration-300", empty ? "p-3" : "px-4 py-4")}>
+          <div ref={scroller} aria-live="polite" className="max-h-56 space-y-3 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_20px)] pt-2">
+            {s.captions.map((c) => <Bubble key={c.id} c={c} latest={c.id === latestSigned} />)}
+          </div>
+
+          {/* Inline undo right after the agent fixes a word */}
+          {s.lastFix && !s.pending && (
+            <div className="mt-3 flex items-center gap-2 rounded-full bg-muted py-1.5 pl-4 pr-1.5">
+              <Check className="h-4 w-4 shrink-0 text-mint-ink" aria-hidden />
+              <p className="min-w-0 flex-1 truncate text-sm font-semibold">Fixed to “{s.lastFix}”</p>
+              <button onClick={s.undo} className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-background px-3 text-sm font-bold active:scale-95">
+                <Undo2 className="h-4 w-4" /> Undo
+              </button>
+            </div>
           )}
-          <div className="flex flex-wrap gap-2">
-            {QUICK.map((q) => <Pill key={q} size="sm" onClick={() => s.onSentenceTranslated({ text: q })}>{q}</Pill>)}
-          </div>
-          {s.tts === "playing" && <p role="status" className="text-sm font-bold">🔊 Reading your words aloud…</p>}
-        </div>
-      </section>
+
+          {(s.pending || s.suggestTyping || typing) && (
+            <div className={cn("space-y-3", !empty && "mt-3")}>
+              <RepairCard onType={() => setTyping(true)} />
+              <TypingSuggestion onType={() => setTyping(true)} />
+              {typing && (
+                <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (draft.trim()) { if (s.awaitingTyped) s.fixTyped(draft); else s.say(draft.trim(), "sam", { typed: true }); setDraft(""); setTyping(false); } }}>
+                  <label htmlFor="typed" className="sr-only">Type your message</label>
+                  <input id="typed" autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={s.awaitingTyped ? "Type the right word…" : "Type your message…"}
+                    className="h-12 min-w-0 flex-1 rounded-full border border-foreground/15 bg-background px-5 text-lg outline-none transition-colors placeholder:text-muted-foreground focus:border-foreground/30" />
+                  <button type="submit" aria-label="Send" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary active:scale-95">
+                    <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
+                  </button>
+                </form>
+              )}
+            </div>
+          )}
+        </section>
+        )}
+
+        {/* Dark glass control bar, same as the home tab bar */}
+        <nav aria-label="Conversation controls"
+          className="mx-4 mb-4 grid grid-cols-2 rounded-full border border-white/15 bg-neutral-900/80 p-1.5 text-white backdrop-blur-xl backdrop-saturate-150 shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_30px_rgba(0,0,0,0.25)]">
+          <BarToggle icon={s.readAloud ? Volume2 : VolumeX} label={s.readAloud ? "Audio" : "Audio off"} on={s.readAloud} onClick={() => s.setReadAloud(!s.readAloud)} />
+          <BarToggle icon={Keyboard} label="Type" on={typing} onClick={() => { if (typing) s.cancelTyped(); setTyping(!typing); }} />
+        </nav>
+      </div>
     </div>
   );
 }

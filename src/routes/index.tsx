@@ -1,25 +1,22 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect } from "react";
+import { AnimatedLogo } from "@/components/signify/AnimatedLogo";
 import { seo } from "@/lib/seo";
 
 export const Route = createFileRoute("/")({
-  head: () => seo("Talk face to face", "Signify helps Deaf and hearing people talk face to face."),
-  component: Loading,
+  head: () => seo("Every conversation, understood", "Signify helps Deaf and hearing people talk face to face."),
+  component: Splash,
 });
 
-function Loading() {
+/** Launch screen: the logo animation is the loader. Tap anywhere to skip. */
+function Splash() {
   const nav = useNavigate();
-  useEffect(() => { const t = setTimeout(() => nav({ to: "/home" }), 2200); return () => clearTimeout(t); }, [nav]);
+  const go = () => nav({ to: "/home" });
+  useEffect(() => { const t = setTimeout(go, 2150); return () => clearTimeout(t); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
-    <div className="flex flex-1 flex-col items-center px-10 pb-16" role="status" aria-label="Loading Signify">
-      <div className="flex flex-1 flex-col items-center justify-center gap-2">
-        <img src="/logo.jpg" alt="Signify" className="w-64" />
-        <p className="text-lg font-medium text-soft-headline">Talk face to face.</p>
-      </div>
-      <div className="h-1 w-24 overflow-hidden rounded-full bg-muted">
-        <div className="h-full bg-foreground" style={{ animation: "load-bar 2s ease-out forwards" }} />
-      </div>
-      <p className="label-caps mt-3 text-[10px] text-muted-foreground">Loading…</p>
-    </div>
+    <button onClick={go} className="flex flex-1 flex-col items-center justify-center gap-3 px-10" aria-label="Signify is loading. Tap to continue.">
+      <AnimatedLogo />
+      <p className="logo-tagline text-lg font-medium text-soft-headline">Every conversation, understood.</p>
+    </button>
   );
 }

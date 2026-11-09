@@ -28,7 +28,7 @@ function NotFoundComponent() {
         <div className="mt-6">
           <Link
             to="/"
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors active:bg-primary/90"
           >
             Go home
           </Link>
@@ -60,13 +60,13 @@ function ErrorComponent({ error, reset }: ErrorComponentProps) {
               router.invalidate();
               reset();
             }}
-            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors active:bg-primary/90"
           >
             Try again
           </button>
           <a
             href="/"
-            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+            className="inline-flex items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors active:bg-accent"
           >
             Go home
           </a>
@@ -84,9 +84,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Signify — Talk face to face" },
+      { title: "Signify · Talk face to face" },
       { name: "description", content: "Signify helps Deaf and hearing people talk face to face with live sign translation." },
-      { property: "og:title", content: "Signify — Talk face to face" },
+      { property: "og:title", content: "Signify · Talk face to face" },
       { property: "og:description", content: "Live sign translation with an AI agent that checks and repairs captions." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
@@ -130,11 +130,13 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <SignifyProvider>
-        <div className="min-h-dvh bg-muted sm:py-6">
-          <main className="relative mx-auto flex min-h-dvh w-full max-w-[390px] flex-col overflow-hidden bg-background sm:min-h-[845px] sm:rounded-[2rem] sm:shadow-2xl">
+        <div className="app-backdrop min-h-dvh bg-muted sm:py-6">
+          {/* id + transform: sheets portal in here, and "fixed" overlays fill the phone instead of the browser */}
+          <main id="phone-frame" className="relative mx-auto [transform:translateZ(0)] flex min-h-dvh w-full max-w-[390px] flex-col overflow-hidden bg-background sm:min-h-[845px] sm:rounded-[2rem] sm:shadow-2xl">
             <Outlet />
-            <BridgeSimulator />
           </main>
+          {/* Dev tool lives outside the phone frame */}
+          <BridgeSimulator />
         </div>
         <Toaster position="top-center" />
       </SignifyProvider>
