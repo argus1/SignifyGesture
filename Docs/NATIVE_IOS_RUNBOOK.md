@@ -42,7 +42,11 @@ development setup. Start the Lovable/Vite frontend before launching the app.
    `SIGNIFY_FRONTEND_URL` when building. Do not use `localhost` for a physical
    iPad; use the Mac's current LAN address and keep it out of tracked files.
 4. Build and launch from Xcode, grant camera access, and confirm the native
-   preview and tracking status. Camera frames remain on device.
+   preview and tracking status. Confirm the app explains camera use before the
+   iOS permission prompt, and that denial provides a Settings path. Background
+   the app and confirm capture stops; return to the foreground and restart from
+   the frontend camera control. The native stop control must also stop capture.
+   Camera frames remain on device.
 
 For example, replace the placeholder with the current Mac LAN address:
 

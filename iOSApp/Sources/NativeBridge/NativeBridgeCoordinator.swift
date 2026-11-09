@@ -1,7 +1,44 @@
+import AVFoundation
 import Combine
 import Foundation
 import QuartzCore
+import UIKit
 import WebKit
+
+enum CameraPermissionPrompt: String, Identifiable {
+    case rationale
+    case denied
+    case restricted
+    case unavailable
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .rationale:
+            return "Camera access"
+        case .denied:
+            return "Camera access is off"
+        case .restricted:
+            return "Camera access is restricted"
+        case .unavailable:
+            return "Camera unavailable"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .rationale:
+            return "The front camera shows your preview and processes hand poses on this device. Video is not saved or sent to the web UI. Continue to the iOS permission prompt?"
+        case .denied:
+            return "Allow camera access in Settings to use the live preview and hand-pose tracking."
+        case .restricted:
+            return "Camera access is restricted by this device's settings. Change the restriction before trying again."
+        case .unavailable:
+            return "This device does not have an available front-facing camera."
+        }
+    }
+}
 
 final class NativeBridgeCoordinator: NSObject, ObservableObject {
     static let webBridgeBootstrap = """
@@ -28,10 +65,14 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     private static let validatedConfidenceThreshold: Double? = nil
 
     @Published private(set) var cameraActive = false
+    @Published private(set) var cameraStarting = false
+    @Published private(set) var cameraPermissionPrompt: CameraPermissionPrompt?
     private var recentFrames: [[Float]] = []
     private var lastPublishedGloss: String?
     private var predictionInFlight = false
     private var inferenceGeneration = 0
+    private var cameraOperationGeneration = 0
+    private var cameraActivationPending = false
 
     override init() {
         super.init()
@@ -168,35 +209,150 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         }
     }
 
+    func requestCameraActivation() {
+        if cameraActive {
+            cameraActivationPending = false
+            return
+        }
+        if cameraStarting {
+            return
+        }
+
+        switch camera.authorizationStatus {
+        case .authorized:
+            cameraActivationPending = true
+            startCameraCapture()
+        case .notDetermined:
+            cameraActivationPending = true
+            cameraPermissionPrompt = .rationale
+        case .denied:
+            cameraActivationPending = true
+            cameraPermissionPrompt = .denied
+        case .restricted:
+            cameraActivationPending = false
+            cameraPermissionPrompt = .restricted
+        @unknown default:
+            cameraActivationPending = false
+            cameraPermissionPrompt = .restricted
+        }
+    }
+
+    func confirmCameraPermission() {
+        cameraPermissionPrompt = nil
+        cameraActivationPending = true
+        startCameraCapture()
+    }
+
+    func openCameraSettings() {
+        cameraPermissionPrompt = nil
+        cameraActivationPending = true
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settingsURL) { [weak self] opened in
+            guard !opened, let self else { return }
+            self.cameraActivationPending = false
+            self.cameraPermissionPrompt = .denied
+            self.emit(
+                method: "onNativeError",
+                payload: ["feature": "camera", "message": "Could not open Settings. Enable camera access there, then try again."]
+            )
+        }
+    }
+
+    func cancelCameraActivation() {
+        cameraPermissionPrompt = nil
+        cameraActivationPending = false
+    }
+
+    func clearCameraPermissionPrompt() {
+        cameraPermissionPrompt = nil
+    }
+
+    func stopCamera() {
+        cameraPermissionPrompt = nil
+        cameraActivationPending = false
+        stopCameraCapture()
+    }
+
+    func sceneDidBecomeActive() {
+        if cameraActivationPending {
+            requestCameraActivation()
+            return
+        }
+        guard cameraActive, camera.authorizationStatus != .authorized else { return }
+        cameraPermissionPrompt = camera.authorizationStatus == .denied ? .denied : .restricted
+        stopCameraCapture()
+    }
+
+    func sceneDidEnterBackground() {
+        guard cameraActive || cameraStarting else { return }
+        cameraActivationPending = false
+        stopCameraCapture()
+    }
+
+    private func startCameraCapture() {
+        guard !cameraActive, !cameraStarting else { return }
+        cameraStarting = true
+        cameraOperationGeneration += 1
+        let operation = cameraOperationGeneration
+
+        camera.start { [weak self] result in
+            guard let self else { return }
+            guard operation == self.cameraOperationGeneration else {
+                if case .success = result {
+                    self.camera.stop()
+                }
+                return
+            }
+
+            self.cameraStarting = false
+            switch result {
+            case .success:
+                self.cameraActivationPending = false
+                self.cameraActive = true
+                self.emitEngineStatus(trackingState: self.camera.trackingState.rawValue)
+                if let error = self.classifier.availabilityError {
+                    self.emitRecognitionState("modelUnavailable", message: error.localizedDescription)
+                } else if Self.validatedConfidenceThreshold == nil {
+                    self.emitRecognitionState(
+                        "confidenceThresholdNotValidated",
+                        message: "Recognition is disabled until a validation-set confidence threshold is established."
+                    )
+                }
+            case .failure(let error):
+                self.cameraActive = false
+                self.cameraActivationPending = false
+                self.emitEngineStatus(trackingState: "idle")
+                if let captureError = error as? CameraCaptureError {
+                    switch captureError {
+                    case .permissionDenied:
+                        self.cameraPermissionPrompt = .denied
+                    case .permissionRestricted:
+                        self.cameraPermissionPrompt = .restricted
+                    case .cameraUnavailable:
+                        self.cameraPermissionPrompt = .unavailable
+                    }
+                }
+                self.emit(method: "onNativeError", payload: ["feature": "camera", "message": error.localizedDescription])
+            }
+        }
+    }
+
+    private func stopCameraCapture() {
+        cameraOperationGeneration += 1
+        cameraStarting = false
+        camera.stop { [weak self] in
+            guard let self else { return }
+            self.cameraActive = false
+            self.resetInferenceState()
+            self.emitEngineStatus(trackingState: "idle")
+        }
+    }
+
     private func handleCameraToggle(active: Bool) {
         if active {
-            camera.start { [weak self] result in
-                guard let self else { return }
-                switch result {
-                case .success:
-                    self.cameraActive = true
-                    self.emitEngineStatus(trackingState: self.camera.trackingState.rawValue)
-                    if let error = self.classifier.availabilityError {
-                        self.emitRecognitionState("modelUnavailable", message: error.localizedDescription)
-                    } else if Self.validatedConfidenceThreshold == nil {
-                        self.emitRecognitionState(
-                            "confidenceThresholdNotValidated",
-                            message: "Recognition is disabled until a validation-set confidence threshold is established."
-                        )
-                    }
-                case .failure(let error):
-                    self.cameraActive = false
-                    self.emitEngineStatus(trackingState: "idle")
-                    self.emit(method: "onNativeError", payload: ["feature": "camera", "message": error.localizedDescription])
-                }
-            }
+            requestCameraActivation()
         } else {
-            camera.stop { [weak self] in
-                guard let self else { return }
-                self.cameraActive = false
-                self.resetInferenceState()
-                self.emitEngineStatus(trackingState: "idle")
-            }
+            stopCamera()
         }
     }
 

@@ -19,12 +19,15 @@ struct LandmarkFrame {
 
 enum CameraCaptureError: LocalizedError {
     case permissionDenied
+    case permissionRestricted
     case cameraUnavailable
 
     var errorDescription: String? {
         switch self {
         case .permissionDenied:
-            return "Camera permission was denied."
+            return "Camera access is off. Allow it in Settings to use hand-pose tracking."
+        case .permissionRestricted:
+            return "Camera access is restricted on this device."
         case .cameraUnavailable:
             return "A front-facing camera is unavailable."
         }
@@ -47,29 +50,53 @@ final class CameraCaptureService: NSObject, ObservableObject {
 
     @Published private(set) var trackingState: CameraTrackingState = .idle
 
-    func start(completion: @escaping (Result<Void, Error>) -> Void) {
-        AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
-            guard let self else { return }
-            guard granted else {
-                DispatchQueue.main.async {
-                    completion(.failure(CameraCaptureError.permissionDenied))
-                }
-                return
-            }
+    var authorizationStatus: AVAuthorizationStatus {
+        AVCaptureDevice.authorizationStatus(for: .video)
+    }
 
-            self.sessionQueue.async {
-                do {
-                    try self.configureIfNeeded()
-                    if !self.session.isRunning {
-                        self.session.startRunning()
-                    }
+    func start(completion: @escaping (Result<Void, Error>) -> Void) {
+        switch authorizationStatus {
+        case .authorized:
+            startAuthorizedCapture(completion: completion)
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in
+                guard let self else { return }
+                guard granted else {
                     DispatchQueue.main.async {
-                        completion(.success(()))
+                        completion(.failure(CameraCaptureError.permissionDenied))
                     }
-                } catch {
-                    DispatchQueue.main.async {
-                        completion(.failure(error))
-                    }
+                    return
+                }
+                self.startAuthorizedCapture(completion: completion)
+            }
+        case .denied:
+            DispatchQueue.main.async {
+                completion(.failure(CameraCaptureError.permissionDenied))
+            }
+        case .restricted:
+            DispatchQueue.main.async {
+                completion(.failure(CameraCaptureError.permissionRestricted))
+            }
+        @unknown default:
+            DispatchQueue.main.async {
+                completion(.failure(CameraCaptureError.permissionRestricted))
+            }
+        }
+    }
+
+    private func startAuthorizedCapture(completion: @escaping (Result<Void, Error>) -> Void) {
+        sessionQueue.async {
+            do {
+                try self.configureIfNeeded()
+                if !self.session.isRunning {
+                    self.session.startRunning()
+                }
+                DispatchQueue.main.async {
+                    completion(.success(()))
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
                 }
             }
         }
