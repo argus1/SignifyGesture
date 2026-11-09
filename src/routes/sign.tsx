@@ -190,7 +190,7 @@ function Conversation() {
 
         {/* Caption card: hidden until something is said, then slides up */}
         {(!empty || typing || s.pending || s.suggestTyping) && (
-        <section aria-label="Live captions" className={cn("mx-4 mb-3 rounded-[2rem] bg-background animate-in fade-in slide-in-from-bottom-4 duration-300", speech ? "border border-foreground/10 shadow-[0_8px_30px_rgba(0,0,0,0.08)]" : "shadow-[0_8px_30px_rgba(0,0,0,0.18)]", empty ? "p-3" : "px-4 py-4")}>
+        <section aria-label="Live captions" className={cn("mx-4 mb-3 rounded-[2rem] bg-background transition-[border-color,box-shadow] duration-300 animate-in fade-in slide-in-from-bottom-4", speech ? "border border-foreground/10 shadow-[0_8px_30px_rgba(0,0,0,0.08)]" : "border border-transparent shadow-[0_8px_30px_rgba(0,0,0,0.18)]", empty ? "p-3" : "px-4 py-4")}>
           <div ref={scroller} aria-live="polite" className="max-h-56 space-y-3 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_20px)] pt-2">
             {s.captions.map((c) => <Bubble key={c.id} c={c} latest={c.id === latestSigned} />)}
           </div>
