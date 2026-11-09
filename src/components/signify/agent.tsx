@@ -78,7 +78,7 @@ export function AgentChip({ className }: { className?: string }) {
                 <label id="thr">Ask me when confidence is below</label>
                 <span>{Math.round(a.threshold * 100)}%</span>
               </div>
-              <Slider aria-labelledby="thr" className="mt-3" min={0.4} max={0.95} step={0.05} value={[a.threshold]} onValueChange={([v]) => a.setThreshold(v)} />
+              <Slider aria-labelledby="thr" className="mt-3" min={0.4} max={0.95} step={0.05} value={[a.threshold]} onValueChange={([v]) => a.setThreshold(v ?? a.threshold)} />
             </div>
             <section>
               <p className="label-caps text-[10px] text-muted-foreground">Learned corrections</p>

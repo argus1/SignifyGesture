@@ -179,7 +179,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
 
   const undo = useCallback(() => {
     const prev = history.current.pop();
-    if (!prev) return toast("Nothing to undo");
+    if (!prev) { toast("Nothing to undo"); return; }
     setCaptions(prev.captions);
     setCorrections(prev.corrections);
     setLastAction({ text: "Undid the last change", reason: "You asked to undo" });
