@@ -28,3 +28,5 @@ use the editor.
   own key and store it in Secrets.
 - **Secrets.** Lovable manages them. Do not put secret values in the repo.
 <!-- LOVABLE:END -->
+
+- Signify state and the repair agent live in one client context (src/lib/signify-store.tsx) that also exposes window.NativeASLBridge; why: the simulator and a future native app must drive the same code path.
