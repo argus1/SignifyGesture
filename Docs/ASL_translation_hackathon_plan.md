@@ -30,12 +30,13 @@ Use a Kanban board with **Backlog → Ready → In Progress → Review/Test → 
 
 ### Day 1 — Align, scope, and unblock
 
-- [ ] Agree the demo persona, 3–5 isolated signs (or a smaller set if model/data availability requires), test vocabulary, and phrases explicitly out of scope.
+- [x] Use this five-gloss ASL Citizen100 demo vocabulary: `RESEARCH1`, `DEVELOP1`, `CLOUD1`, `EDIT1`, and `DECIDE1`. These frequent labels connect to the judges’ AI/research, engineering, cloud, design, and product-strategy backgrounds; describe them as isolated glosses, not sentences or translation.
+- [x] Set the demo audience as makeathon judges unfamiliar with ASL and scope the demo to one isolated gloss at a time. Out of scope: continuous signing or sentence translation, fingerspelling, facial/non-manual markers, signs outside the five-label vocabulary, and emergency, medical, or other high-stakes communication.
 - [ ] Designer + cross-functional B map the primary flow, alternatives to camera/speech, error states, and a first low-fidelity wireframe.
 - [ ] Senior developer creates the native project shell and defines a stable `LandmarkFrame` / `InferenceProvider` boundary.
 - [ ] Cross-functional A spikes the supported iPhone camera/Vision hand-pose path; separately verify Core ML model/data availability.
 - [ ] Cross-functional B sketches the AWS request/response contract and confirms account, region, access, and spend availability before provisioning anything.
-- [ ] Create a small consented or synthetic test protocol; record baseline risks and success measures.
+- [x] Define a signer-independent test protocol using the official ASL Citizen train/validation/test splits, with at least 3 signers and 5 trials per gloss where licensing permits; otherwise use separately consented signer-created samples and record split deviations. Report per-gloss outcomes, confusion/no-result rates, confidence behavior, and on-device end-to-end latency; do not claim measured performance before running the protocol.
 - [ ] Start a Lovable credit ledger by member before generating prototypes.
 
 ### Day 2 — Build parallel vertical slices
@@ -108,11 +109,21 @@ Each issue body is intentionally actionable on its own. Add the available reposi
 
 **Goal:** Bound the prototype to a small isolated-sign vocabulary and define how the team will evaluate it without overstating capability.
 
-- [ ] Agree and record 3–5 demo signs, an explicit out-of-scope list, and a small set of non-sensitive test phrases.
-- [ ] Confirm model/dataset availability, license, provenance, vocabulary, landmark convention, and signer coverage; choose a constrained baseline if no suitable model is available.
-- [ ] Define a repeatable test split by signer; aim for at least 3 signers and 5 trials per sign where feasible, and record deviations.
+**Current scope and vocabulary:** The demo audience is makeathon judges who may not know ASL. Show one isolated gloss at a time using `RESEARCH1` (research), `DEVELOP1` (develop), `CLOUD1` (cloud), `EDIT1` (edit), and `DECIDE1` (decide), selected for likely familiarity with the judges’ AI/research, engineering, cloud, design, and product-strategy work. Out of scope: continuous signing or sentence translation, fingerspelling, facial/non-manual markers, any gloss outside this five-label set, and emergency, medical, or other high-stakes communication. The English words are cue/label meanings, not a claim that the app translates English phrases into ASL or vice versa.
+
+Each selected label appears in the official ASL Citizen train, validation, and test metadata. In the test split, the labels have 14–17 clips apiece and coverage from 10–11 signers, sufficient for a test target of at least 3 signers and 5 trials per gloss. The protocol is to preserve the published signer-independent split, use validation only for model selection and confidence/no-result threshold setting, and report test results separately for every gloss. These are dataset availability counts, not this app’s recognition results or proof of signer-reviewed meanings.
+
+**Data/model decision:** The supplied article evaluates an ASL Citizen100 subset (100 gloss classes, 3,544 videos from 45 signers), but does not name its glosses or report per-gloss results. It describes a multimodal RGB/pose model; its pose baseline uses 67 three-dimensional landmarks per frame, which is not the same input contract as Apple Vision’s 2D hand-pose observations. The paper and the project repository do not provide a confirmed, app-ready Core ML model/checkpoint. Therefore, no sign-recognition model is currently approved for the demo. Unless a compatible model and its license are verified, the honest fallback is tracking/status plus an explicit no-result state—not a mock or guessed sign prediction.
+
+The official [Microsoft Research license](https://www.microsoft.com/en-us/research/project/asl-citizen/dataset-license/) limits use of its materials to non-commercial, non-revenue-generating research and prohibits redistribution of the data or modifications. The five labels/counts inform scope only. Do not download, bundle, upload, publish, or train/distribute on ASL Citizen videos or derived materials for the demo until the team verifies the planned use is permitted. If it is not, use only newly collected, explicitly consented signer samples under a documented protocol. The supplied paper is not Apple research; Apple’s [sign-language annotation research](https://machinelearning.apple.com/research/sign-language-annotations) reports an isolated-sign baseline on ASL Citizen but does not provide a ready-to-use model or a short list of demo glosses.
+
+References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Microsoft’s [ASL Citizen dataset description](https://www.microsoft.com/en-us/research/project/asl-citizen/dataset-description/), and its [dataset license](https://www.microsoft.com/en-us/research/project/asl-citizen/dataset-license/).
+
+- [x] Record the five selected glosses, an explicit out-of-scope list, and a small set of non-sensitive test cues: one isolated prompt per gloss—“research,” “develop,” “cloud,” “edit,” and “decide.” Do not combine them into phrases for recognition.
+- [x] Document dataset provenance, label coverage, published landmark convention, and license restriction. No app-ready compatible model/checkpoint is confirmed; use tracking plus no-result until a compliant model path is verified.
+- [x] Define a repeatable signer-independent test split using the official test partition if permitted; otherwise use consented data and document any deviation. The five selected labels have sufficient listed test coverage to exceed 3 signers and 5 trials each.
 - [ ] Report per-class accuracy/recall, confusion cases, confidence behavior, and end-to-end latency; do not hide weak classes behind an aggregate.
-- [ ] Write the exact user-facing limitation statement and criteria for an uncertain/no-result state.
+- [x] Limitation statement: “Experimental demo for five isolated ASL glosses only. It does not translate sentences or replace an interpreter. Results can be wrong; review and edit the text. Do not use for emergency or other high-stakes communication.” Show no result when tracking/input is invalid, the model is unavailable, the output is outside the five supported labels, or the validation-set confidence threshold is not met. Do not invent a numeric threshold before validation.
 
 **Acceptance:** Scope, data/model decision, protocol, and limitations are committed in the repo or linked from the demo issue; no claim of continuous translation or validated general ASL capability.
 
