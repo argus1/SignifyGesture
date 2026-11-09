@@ -38,10 +38,11 @@ Use a Kanban board with **Backlog → Ready → In Progress → Review/Test → 
 - [ ] Cross-functional B sketches the AWS request/response contract and confirms account, region, access, and spend availability before provisioning anything.
 - [x] Define a signer-independent test protocol using the official ASL Citizen train/validation/test splits, with at least 3 signers and 5 trials per gloss where licensing permits; otherwise use separately consented signer-created samples and record split deviations. Report per-gloss outcomes, confusion/no-result rates, confidence behavior, and on-device end-to-end latency; do not claim measured performance before running the protocol.
 - [ ] Start a Lovable credit ledger by member before generating prototypes.
+- [ ] Scope optional intelligent help (P16): confirm frontend ownership, screen/control identifiers, demo-device AFM availability, and reviewed help topics. No cloud provisioning is required for this decision.
 
 ### Day 2 — Build parallel vertical slices
 
-- [x] Implement native camera-permission handling, camera preview, Vision pose extraction, and visible tracking state. Physical-device behavior and camera/Vision coordinate mapping still need verification.
+- [x] Implement native camera-permission rationale and recovery, camera preview with an always-available stop control, Vision pose extraction, and visible tracking state. Simulator builds pass; physical-device behavior and camera/Vision coordinate mapping still need verification.
 - [ ] Build a clickable Lovable prototype for flows and interaction review; use it as design evidence, not as the native iOS deliverable.
 - [ ] Implement the local inference adapter and evaluation harness against a fixed input shape; if a suitable model is unavailable, clearly label the limited baseline and keep the interface ready for a model.
 - [ ] Implement and test the AWS endpoint independently against the same contract; do not upload camera frames.
@@ -55,12 +56,14 @@ Use a Kanban board with **Backlog → Ready → In Progress → Review/Test → 
 - [ ] Conduct short task-based usability/accessibility checks; include Deaf/HoH participants when available and record when they are not.
 - [ ] Complete privacy/threat-model and standards-scope review. Fix high-severity issues before adding optional features.
 - [ ] Only if the core demo is stable, begin the optional avatar mirroring slice; keep it off the critical path.
+- [ ] If the core demo is stable, integrate the optional P16 help panel and bounded navigation tools; use on-device AFM where available and retain conventional help everywhere. Cloud help remains separately opt-in and subject to account-owner approval.
 
 ### Day 4 — Stabilize, demo, and hand off
 
 - [ ] Rehearse a clean-install end-to-end demo in local mode and, if provisioned, AWS mode; verify offline behavior and failure states.
 - [ ] Run the accessibility checklist on device, test the full permission/denial/revocation flow, and check transcript corrections and speech controls.
 - [ ] Include avatar mirroring only if it is complete, understandable, and does not displace core reliability or accessibility fixes.
+- [ ] Include intelligent help only if P16 acceptance checks pass; otherwise defer the agent and retain conventional help. Record provider/device coverage, observed latency, and known limitations.
 - [ ] Capture a short demo, final wireframes/prototype link, measured results, architecture diagram, setup notes, and known limitations.
 - [ ] Stop optional feature work; fix only issues that block the demo, mislead users, expose data, or materially block access.
 - [ ] Reserve November 11 as event-window contingency/submission time if the team’s four sprint days finish earlier.
@@ -85,6 +88,9 @@ The team has **4 × 100 = 400 credits total** under the stated hackathon allowan
 - **Human agency:** show the recognized text before speech; allow edit, clear, repeat, and mute/stop. Provide a usable non-camera/non-speech route through the prototype and explain limitations.
 - **Data minimization:** no account, analytics, raw media upload, or retention is needed for the hackathon. If a cloud request is enabled, obtain explicit opt-in and disclose what is sent, where it goes, and retention. Use synthetic data for demos; do not enter health or other sensitive conversations.
 - **Model/data readiness is a Day 1 gate:** document model license, provenance, vocabulary, expected landmark convention, signer coverage, and test split. If no suitable model/data is available, demo tracking and a clearly labeled constrained baseline; do not call it reliable ASL translation.
+- **Optional intelligent help:** a bounded assistant explains reviewed app features, highlights controls, and proposes navigation through allowlisted app APIs. It is not a sign-recognition/translation provider, autonomous screen-clicker, interpreter, or source of medical/emergency advice. Keep it independent of the inference-provider contract and outside the core demo's critical path.
+- **Help-provider availability and consent:** preserve the iOS 17 minimum. Compile AFM integration with a supporting SDK, availability-gate it to iOS/iPadOS 26+, and check `SystemLanguageModel` readiness on eligible Apple Intelligence devices. Always retain conventional help. Cloud help requires its own explicit disclosure/opt-in, independent of landmark-inference consent; never silently send an on-device conversation to a cloud model.
+- **Help context and execution:** expose only the current screen, allowlisted controls, feature readiness, permission state, and relevant error codes. Exclude video, landmarks, transcript, and audio; do not retain help conversations or log their bodies by default. Validate model-proposed actions against current app state, preserve native permission flows, and require explicit user action before capture, speech, uploads, or settings changes.
 
 ## Regulatory and accessibility checkpoints
 
@@ -99,7 +105,7 @@ Use the repository’s [`Standards/`](../Standards/) documents as design and ris
 - [ ] **Consent and control:** explain camera use before the permission prompt; explain landmark upload before cloud mode; provide cancel/disable controls; make speech opt-in and interruptible.
 - [ ] **No overclaiming:** show an “experimental / limited vocabulary” disclosure and an uncertainty state; do not describe the output as a verbatim or certified translation.
 
-## Issue board (15 independent, Kanban-sized work items)
+## Issue board (16 Kanban-sized work items)
 
 Each issue body is intentionally actionable on its own. Add the available repository labels (`enhancement`, `accessibility`, `help wanted`, or `documentation`) as appropriate; issue numbers/links are added after creation.
 
@@ -174,8 +180,8 @@ References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Mi
 
 **Goal:** Capture frames safely and predictably for the Vision processing path.
 
-- [ ] Request camera access only after explaining why it is needed; handle denied/restricted/revoked access with a usable explanation and retry/settings path.
-- [ ] Add a front-camera preview with capture start/stop tied to view lifecycle and a visible camera-active indicator.
+- [x] Request camera access only after explaining why it is needed; handle denied/restricted/revoked access with a usable explanation and retry/settings path. Device permission flows remain unverified.
+- [x] Add a front-camera preview with capture start/stop tied to view lifecycle and a visible camera-active indicator. Backgrounding or leaving the shell stops capture; the user can restart from the web UI.
 - [x] Configure frame delivery off the UI thread, discard stale frames, and expose actionable errors rather than swallowing them.
 - [ ] Verify app behavior when entering background, leaving the screen, and stopping/restarting capture.
 
@@ -322,11 +328,47 @@ References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Mi
 
 **Acceptance:** When enabled, the prototype visibly mirrors detected hand movement on a supported device; when disabled or tracking is unavailable, the core demo remains usable without introducing schedule or scope risk.
 
+### [P16 · #18](https://github.com/argus1/SignifyGesture/issues/18) — Add optional context-aware intelligent help and navigation
+
+**Track:** Optional UX / iOS / integration · **Suggested owner:** Senior developer + designer, cross-functional B for cloud integration · **Can start:** Day 1 for content/contracts; Day 3 integration only if the core demo is stable
+
+**Goal:** Help users understand and navigate the app with truthful, accessible guidance grounded in reviewed content and live app state. Deliver conventional help first, then an on-device Apple Foundation Models (AFM) assistant on eligible devices. Cloud help is a separately approved extension, not a prerequisite.
+
+**Dependencies:** P02 for reviewed flows/content and P04 for native bridge integration. Define screen/control contracts with the externally maintained Lovable frontend; its source/router is not in this checkout. P12/P13 review accessibility/privacy and P14 validates inclusion in the demo. This work does not depend on deploying P09's landmark-inference endpoint or training a recognition model.
+
+**Implementation checklist**
+
+- [ ] Define a versioned help-context/action contract and reviewed topics: camera permission/recovery, tracking versus recognition, model readiness, transcript correction, optional speech, and local/cloud distinctions. Match help content to the app version and actual implemented features.
+- [ ] Add a discoverable text-first help panel with searchable conventional instructions, suggested questions, visible busy/error/cancel states, and a dismiss/return path that preserves the user's work.
+- [ ] Implement `getHelpContext()` and `searchHelp(query)` using minimal state and bundled reviewed content; start without a vector database or external web search.
+- [ ] Wire `navigateTo(destination)` and `highlightControl(controlID)` to the frontend router and stable control identifiers through a typed bridge. Validate allowlisted targets and current availability; return actual success/failure and move accessibility focus appropriately.
+- [ ] Implement `requestCameraHelp()` using existing native permission and Settings flows. Explain denial/restriction/model-unavailable states without bypassing permission prompts or inventing recognition results.
+- [ ] Add AFM with `SystemLanguageModel`, `LanguageModelSession`, `@Generable`, and `Tool`; use availability guards and runtime readiness checks while preserving iOS 17 compatibility. Keep sessions/context bounded and serialize state-changing actions.
+- [ ] Reject arbitrary JavaScript, URLs, unknown action identifiers, and stale/unavailable targets. Treat user/content input as untrusted; enforce action policy in app code, not just model instructions. Capture, speech, uploads, and settings changes require explicit user action.
+- [ ] Keep help local by default; exclude media, landmarks, transcript, and audio from model context. Do not retain conversations or log request/response bodies by default.
+- [ ] For an approved cloud extension, use an authenticated HTTPS backend with server-side credentials, bounded requests/tool calls, timeouts, rate/spend limits, cancellation, and explicit errors. Obtain separate cloud-help consent, disclose provider/data/retention, and provide opt-out without uploading prior local history.
+- [ ] Test both help providers against the same content/action contract where enabled; document SDK/device requirements, unavailable-model behavior, measurements, configuration, and cloud teardown where applicable.
+
+**Tooling choices:** Use Swift Foundation Models and the existing `WKWebView` bridge for the first agent slice. For approved AWS cloud help, prefer API Gateway/Lambda plus Amazon Bedrock tool calling; OpenAI Responses API is an alternative behind the same backend contract. AgentCore/Strands or Microsoft Foundry Agent Service are later options if managed orchestration is justified, not sprint requirements. Use XCTest for native policy/availability tests and the frontend's existing test runner plus browser tests for routing, highlighting, and focus. Apple Private Cloud Compute is a later entitlement-gated iOS/iPadOS 27+ option, not the fallback for iOS 17 or ineligible hardware.
+
+**Acceptance criteria**
+
+- [ ] **Compatibility/fallback:** The app builds with iOS 17 as its minimum. On an eligible device with AFM ready, help uses AFM; on iOS 17, ineligible hardware, or an unavailable model, conventional help remains usable with no cloud request. Bundled help and navigation remain usable offline when the frontend is locally available; a remotely hosted frontend is not claimed to work offline.
+- [ ] **Grounding:** A fixed suite covering all six reviewed topics above returns approved guidance or an explicit limitation/no-answer. Camera denied, tracking-only, recognition-model unavailable, avatar unavailable, and cloud-unconfigured fixtures never produce claims that those features are working.
+- [ ] **Navigation:** Every registered destination/control passes an end-to-end navigation/highlight test on an implemented screen. Unknown, stale, unavailable, and injected targets are rejected visibly without arbitrary code execution or unintended navigation; no unavailable screen is fabricated.
+- [ ] **User control:** Requests to start capture, speak, upload, or change settings cannot execute without explicit user action. Permission denial/revocation and cancellation preserve existing native safeguards, the editable transcript, and immediate stop controls.
+- [ ] **Privacy/cloud separation:** Network inspection confirms no help-provider requests in local-help mode and no camera frames, landmarks, transcript, or audio in any help payload. If cloud help is enabled, tests prove separate consent, authenticated access, opt-out/cancellation, visible timeout/quota/service errors, and no silent provider switch or automatic local-history upload.
+- [ ] **Accessibility:** Help, suggested actions, error states, destination focus, and return/dismiss controls pass on-device VoiceOver and enlarged-text checks; guidance never relies on color, motion, or speech alone.
+- [ ] **Performance/handoff:** Record device/OS/provider, first-response and completed-action latency, and camera responsiveness with/without help using fixed prompts. Set numeric pass/fail budgets before testing; include measured results and only ship the agent slice if those budgets pass. Document untested coverage and cloud blockers without presenting mocks as integrated behavior.
+
 ## References
 
 - [FIG AI Design Makeathon 2026](https://events.figstudio.vc/e/fig-ai-design-makeathon-2026) — event page lists November 7–11, 2026, and the November 14 winner announcement.
 - [Lovable documentation: Welcome](https://docs.lovable.dev/introduction/welcome) — use Lovable as a full-stack AI design/build aid for the clickable web prototype; the 100 credits/member allowance is from the hackathon rules provided to the team.
 - [Apple Human Interface Guidelines: Accessibility](https://developer.apple.com/design/human-interface-guidelines/accessibility)
 - [AWS Lambda documentation](https://docs.aws.amazon.com/lambda/latest/dg/welcome.html)
+- [Apple Foundation Models](https://developer.apple.com/documentation/foundationmodels) — on-device sessions, guided generation, tool calling, and availability checks.
+- [Apple Private Cloud Compute integration](https://developer.apple.com/documentation/foundationmodels/adding-server-side-intelligence-with-private-cloud-compute) — later OS, entitlement, availability, and quota requirements.
+- [Amazon Bedrock tool use](https://docs.aws.amazon.com/bedrock/latest/userguide/tool-use.html) and [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling) — alternative cloud backends for bounded help tools.
 - Repository brief: [`ASL_translation_backend.md`](./ASL_translation_backend.md). Its sample pipeline informs the camera → Vision → inference → text/speech design; model readiness and coordinate assumptions must be validated rather than assumed.
 - Repository regulatory references: [`Standards/`](../Standards/), including ADA.gov effective-communication guidance, 47 CFR Parts 9 and 64, the TRS working-group report, and the HHS TRS/HIPAA FAQ.
