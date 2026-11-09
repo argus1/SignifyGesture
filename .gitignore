@@ -1,0 +1,17 @@
+.DS_Store
+
+# XcodeGen output; project.yml is the source of truth.
+iOSApp/SignifyGesture.xcodeproj/
+
+# Xcode local state and build products.
+iOSApp/.deriveddata*/
+iOSApp/DerivedData/
+iOSApp/*.xcworkspace/xcuserdata/
+iOSApp/*.xcodeproj/xcuserdata/
+iOSApp/*.xcuserstate
+
+# Device-specific runbooks/configuration and device build artifacts.
+Docs/*.local.md
+iOSApp/Config/Local.xcconfig
+iOSApp/.device-*/
+iOSApp/*.device.log

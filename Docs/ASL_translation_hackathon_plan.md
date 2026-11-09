@@ -33,15 +33,15 @@ Use a Kanban board with **Backlog → Ready → In Progress → Review/Test → 
 - [x] Use this five-gloss ASL Citizen100 demo vocabulary: `RESEARCH1`, `DEVELOP1`, `CLOUD1`, `EDIT1`, and `DECIDE1`. These frequent labels connect to the judges’ AI/research, engineering, cloud, design, and product-strategy backgrounds; describe them as isolated glosses, not sentences or translation.
 - [x] Set the demo audience as makeathon judges unfamiliar with ASL and scope the demo to one isolated gloss at a time. Out of scope: continuous signing or sentence translation, fingerspelling, facial/non-manual markers, signs outside the five-label vocabulary, and emergency, medical, or other high-stakes communication.
 - [ ] Designer + cross-functional B map the primary flow, alternatives to camera/speech, error states, and a first low-fidelity wireframe.
-- [ ] Senior developer creates the native project shell and defines a stable `LandmarkFrame` / `InferenceProvider` boundary.
-- [ ] Cross-functional A spikes the supported iPhone camera/Vision hand-pose path; separately verify Core ML model/data availability.
+- [x] Senior developer creates the native project shell and defines a stable `LandmarkFrame` / `SignInferenceProvider` boundary. The XcodeGen-generated iOS Simulator build passes; physical-device validation remains open.
+- [ ] Cross-functional A verifies the supported iPad camera/Vision hand-pose path and separately confirms Core ML model/data availability. The native capture and Vision path is implemented, but has not yet been exercised on a physical device.
 - [ ] Cross-functional B sketches the AWS request/response contract and confirms account, region, access, and spend availability before provisioning anything.
 - [x] Define a signer-independent test protocol using the official ASL Citizen train/validation/test splits, with at least 3 signers and 5 trials per gloss where licensing permits; otherwise use separately consented signer-created samples and record split deviations. Report per-gloss outcomes, confusion/no-result rates, confidence behavior, and on-device end-to-end latency; do not claim measured performance before running the protocol.
 - [ ] Start a Lovable credit ledger by member before generating prototypes.
 
 ### Day 2 — Build parallel vertical slices
 
-- [ ] Implement camera preview, permission/onboarding, Vision pose extraction, and a visible tracking state.
+- [x] Implement native camera-permission handling, camera preview, Vision pose extraction, and visible tracking state. Physical-device behavior and camera/Vision coordinate mapping still need verification.
 - [ ] Build a clickable Lovable prototype for flows and interaction review; use it as design evidence, not as the native iOS deliverable.
 - [ ] Implement the local inference adapter and evaluation harness against a fixed input shape; if a suitable model is unavailable, clearly label the limited baseline and keep the interface ready for a model.
 - [ ] Implement and test the AWS endpoint independently against the same contract; do not upload camera frames.
@@ -160,11 +160,11 @@ References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Mi
 
 **Goal:** Establish the smallest native app structure and the seam that lets local and AWS inference run the same demo.
 
-- [ ] Add an Xcode/SwiftUI app target and document supported Xcode/iOS/device assumptions.
+- [x] Add an Xcode/SwiftUI app target and document supported Xcode/iOS/device assumptions.
 - [ ] Define typed normalized landmark/frame, prediction (label + confidence), provider configuration, and error models.
 - [ ] Define `InferenceProvider` implementations for local and AWS modes; make local the default and avoid silent fallback.
 - [ ] Add a simple app state flow and dependency injection/test seam so UI can be exercised with a mock provider.
-- [ ] Document build/run steps and required permission strings; do not add unrelated packages or account features.
+- [x] Document build/run steps and required permission strings; do not add unrelated packages or account features.
 
 **Acceptance:** App builds on a supported simulator/device, mock inference can drive the UI, and both provider choices share a documented input/output contract.
 
@@ -176,7 +176,7 @@ References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Mi
 
 - [ ] Request camera access only after explaining why it is needed; handle denied/restricted/revoked access with a usable explanation and retry/settings path.
 - [ ] Add a front-camera preview with capture start/stop tied to view lifecycle and a visible camera-active indicator.
-- [ ] Configure frame delivery off the UI thread, discard stale frames, and expose actionable errors rather than swallowing them.
+- [x] Configure frame delivery off the UI thread, discard stale frames, and expose actionable errors rather than swallowing them.
 - [ ] Verify app behavior when entering background, leaving the screen, and stopping/restarting capture.
 
 **Acceptance:** On a supported device, the user can grant/deny/revoke camera access and start/stop preview without a frozen UI or unhandled permission state.
@@ -187,9 +187,9 @@ References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Mi
 
 **Goal:** Convert Vision observations to a stable, documented inference input.
 
-- [ ] Extract the supported hand joints and confidence values for up to two hands; represent missing joints/hands explicitly.
+- [x] Extract the supported hand joints and confidence values for up to two hands; represent missing joints/hands explicitly.
 - [ ] Normalize orientation, mirroring, hand ordering, coordinate range, and confidence according to the agreed model contract.
-- [ ] Keep frame processing off the main thread and avoid overlapping unbounded inference work.
+- [x] Keep frame processing off the main thread and avoid overlapping unbounded inference work.
 - [ ] Add debug visualization or a sample-data inspector that does not persist live camera frames by default.
 - [ ] Verify coordinate mapping with known poses and document Vision’s 2D image-space limitations.
 
