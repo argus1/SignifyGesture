@@ -16,8 +16,7 @@ function Learn() {
     <div className="flex flex-1 flex-col">
       <TopBar back="/memory" />
       <div className="px-6 pt-2">
-        <h1 className="headline text-[36px]">Coffee with the barista</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Today · 3 min · {SIGNS.length} signs to practice</p>
+        <h1 className="headline text-[36px]">Coffee, sorted ☕</h1>
       </div>
       <ul className="grid grid-cols-2 gap-3 px-5 pt-5">
         {SIGNS.map((s) => (

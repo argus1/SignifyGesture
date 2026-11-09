@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { Search, PenSquare } from "lucide-react";
 import { toast } from "sonner";
-import { TopBar, Avatar, TabBar } from "@/components/signify/ui";
+import { TopBar, Avatar, TabBar, PageTitle } from "@/components/signify/ui";
 import { THREADS } from "@/lib/sample-data";
 import { seo } from "@/lib/seo";
 
@@ -17,13 +17,12 @@ function Messages() {
   return (
     <div className="flex flex-1 flex-col">
       <TopBar />
-      <div className="flex items-end justify-between px-6 pt-4">
-        <h1 className="headline text-[40px]">Messages</h1>
+      <PageTitle title="Messages" action={
         <button aria-label="New message" onClick={() => toast("New message coming soon")}
-          className="grid h-12 w-12 place-items-center rounded-full bg-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40">
+          className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40">
           <PenSquare className="h-5 w-5" />
         </button>
-      </div>
+      } />
       <div className="relative mx-5 mt-4">
         <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <label htmlFor="msg-search" className="sr-only">Search</label>

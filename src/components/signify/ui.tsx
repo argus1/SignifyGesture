@@ -150,6 +150,20 @@ export function StatusPill({ children, dot = "bg-primary" }: { children: ReactNo
   );
 }
 
+/** Big page title for the tab pages (Messages, Community, Memory): same spot and size everywhere.
+ *  action = optional round button on the right; sub = optional line under the title. */
+export function PageTitle({ title, action, sub }: { title: string; action?: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="px-6 pt-4">
+      <div className="flex min-h-12 items-center justify-between gap-3">
+        <h1 className="headline text-[40px] leading-none">{title}</h1>
+        {action}
+      </div>
+      {sub && <div className="mt-2">{sub}</div>}
+    </div>
+  );
+}
+
 export function Headline({ dark, soft, className }: { dark: string; soft?: string; className?: string }) {
   return (
     <h1 className={cn("headline text-[40px]", className)}>
