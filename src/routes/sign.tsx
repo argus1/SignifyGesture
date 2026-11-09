@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Volume2, VolumeX, Keyboard, ArrowUp, Check, Undo2, Hand, AudioLines, type LucideIcon } from "lucide-react";
 import { useNativeBridge, useSignify, type Caption } from "@/lib/signify-store";
 import { triggerTTSPlayback } from "@/lib/nativeBridge";
-import { StatusPill } from "@/components/signify/ui";
 import { CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
 import { AgentChip, RepairCard, TypingSuggestion } from "@/components/signify/agent";
@@ -53,6 +52,23 @@ function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
           {c.text}
         </p>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Google Translate-style listening light: a hairline of light that casts a soft glow downward,
+ * with the status underneath, sitting just above the controls. A shimmer runs along the line;
+ * faster while someone is signing or talking, dim while it waits on you.
+ */
+function ListeningLight({ status, busy, waiting }: { status: string; busy: boolean; waiting: boolean }) {
+  return (
+    <div role="status" className={cn("listen-light mb-2 flex flex-col items-center", busy && "listen-busy", waiting && "listen-waiting")}>
+      <div aria-hidden className="relative h-7 w-full">
+        <span className="listen-cone absolute left-1/2 top-0 h-7 w-full -translate-x-1/2" />
+        <span className="listen-line absolute left-1/2 top-0 h-px w-full -translate-x-1/2" />
+      </div>
+      <span className="-mt-3 text-sm font-semibold text-white/90">{status}…</span>
     </div>
   );
 }
@@ -130,9 +146,7 @@ function Conversation() {
         {/* Top row mirrors home's header: left · center · right */}
         <header className="grid grid-cols-[44px_1fr_44px] items-center px-4 pt-4 pb-2">
           <GlassButton icon={ChevronLeft} label={empty ? "Back" : "End conversation and see recap"} onClick={() => nav({ to: empty ? "/home" : "/recap" })} />
-          <div className="justify-self-center">
-            <StatusPill dot={engine.tracking === "lost" ? "bg-warning" : s.pending ? "bg-foreground" : "bg-primary"}>{status}</StatusPill>
-          </div>
+          <span />
           <AgentChip />
         </header>
 
@@ -179,6 +193,9 @@ function Conversation() {
           )}
         </section>
         )}
+
+        {/* Hidden while typing: hands are on the keyboard, not signing */}
+        {!typing && <ListeningLight status={status} busy={hearing || signingNow || engine.ttsPlaying} waiting={!!s.pending || engine.tracking === "lost"} />}
 
         {/* Dark glass control bar, same as the home tab bar */}
         <nav aria-label="Conversation controls"
