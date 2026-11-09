@@ -10,6 +10,9 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
+import { SignifyProvider } from "@/lib/signify-store";
+import { Toaster } from "@/components/ui/sonner";
+import { BridgeSimulator } from "@/components/signify/BridgeSimulator";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 
@@ -81,11 +84,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "Signify — Talk face to face" },
+      { name: "description", content: "Signify helps Deaf and hearing people talk face to face with live sign translation." },
+      { property: "og:title", content: "Signify — Talk face to face" },
+      { property: "og:description", content: "Live sign translation with an AI agent that checks and repairs captions." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
@@ -95,6 +97,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700;900&family=Sora:wght@400;600&display=swap" },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
@@ -124,7 +129,15 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <SignifyProvider>
+        <div className="min-h-dvh bg-muted sm:py-6">
+          <main className="relative mx-auto flex min-h-dvh w-full max-w-[390px] flex-col overflow-hidden bg-background sm:min-h-[845px] sm:rounded-[2rem] sm:shadow-2xl">
+            <Outlet />
+            <BridgeSimulator />
+          </main>
+        </div>
+        <Toaster position="top-center" />
+      </SignifyProvider>
     </QueryClientProvider>
   );
 }
