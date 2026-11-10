@@ -137,7 +137,7 @@ bun run scripts/evaluate-asl.ts validation.json test.json <threshold-from-valida
 
 For native results, record the optional `latencyMs` delivered with each prediction/no-result. It measures from the first Vision landmark frame in the 16-frame input window until inference completes. Let tracking become lost between isolated trials so the app clears the preceding sequence and same-gloss suppression.
 
-Only claim the planned signer coverage when `test.coverageRequirements.meetsMinimum` is true. If consented collection cannot meet it, record the actual counts and deviation instead of implying the target was met.
+For real samples, only claim the planned signer coverage when `test.coverageRequirements.meetsMinimum` is true and provenance confirms actual human signers. Synthetic IDs can exercise the count check but cannot establish human coverage. If consented collection cannot meet it, record the actual counts and deviation instead of implying the target was met.
 
 References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Microsoft’s [ASL Citizen dataset description](https://www.microsoft.com/en-us/research/project/asl-citizen/dataset-description/), and its [dataset license](https://www.microsoft.com/en-us/research/project/asl-citizen/dataset-license/).
 
@@ -226,13 +226,135 @@ The landmark contract is 2 hands × 21 joints × (x, y, confidence), with left/r
 
 **Goal:** Make model iteration measurable while limiting collection and storage.
 
-- [ ] Use synthetic/consented samples only; explain purpose, storage, and deletion before recording any teammate or participant.
-- [ ] Prefer landmark-only fixtures; do not commit identifiable video or audio to the repository.
-- [ ] Separate train/tuning and evaluation by signer where possible; record the actual split and sample counts.
+- [ ] Use synthetic/consented samples only; explain purpose, storage, and deletion before recording any teammate or participant. The authored suite is entirely synthetic and the disclosure is documented, but consented human collection remains outstanding.
+- [x] Prefer landmark-only fixtures; do not commit identifiable video or audio to the repository. This reporting suite needs only synthetic prediction metadata, not even landmarks.
+- [ ] Separate train/tuning and evaluation by signer where possible; record the actual split and sample counts. Synthetic validation/test identities are disjoint; real collection and cross-export signer separation remain outstanding.
 - [x] Add `scripts/evaluate-asl.ts` to report per-class results, confusion matrix, confidence/abstention, signer coverage, and latency. Automated tests use generated records only; actual results still require a compatible, licensed model and permitted or consented samples.
-- [ ] Write down data gaps, signer/device/lighting limitations, and whether external Deaf/HoH review occurred.
+- [x] Write down data gaps, signer/device/lighting limitations, and whether external Deaf/HoH review occurred. See the fixture protocol below; no human/device or external review coverage is established.
+- [x] Implement Debug-only native landmark trial capture, review/discard, and explicit local JSON export. Synthetic simulator tests pass; no S3 upload is implemented.
+- [ ] Physically verify capture/export/deletion on the demo device.
+- [ ] Recruit and obtain informed consent from three signers; capture five trials per signer for each of the five glosses (75 trials). Establish signer-disjoint train/validation/test assignments, recruiting additional signers if all three are used for training. This is pilot collection, not proof of sufficient training data.
+- [ ] Add separately consented S3 upload after an authenticated backend, private storage/retention/deletion policy and AWS access are approved (deferred; local export first).
 
 **Acceptance:** Another teammate can run the documented evaluation on fixtures and reproduce the reported measurements without accessing raw recordings.
+
+#### P07 fixture protocol
+
+**Provenance and scope:** The checked-in files
+[`validation.json`](../fixtures/asl-evaluation/validation.json) and
+[`test.json`](../fixtures/asl-evaluation/test.json) contain manually invented
+prediction records. Labels come from the five-gloss scope; no ASL Citizen clips,
+derived landmarks, model outputs, participant data, or recordings were used.
+Every identity/trial is prefixed `synthetic-`. Confidence and latency values are
+deliberately assigned to exercise the reporter. This is a reporting regression
+suite, not an inference fixture, a recognition baseline, or measured performance.
+It is never loaded into the app as a fallback.
+
+| Partition | Records | Invented signer IDs | Records per gloss | Human signers |
+|---|---:|---|---:|---:|
+| Train | 0 | None | 0 | 0 |
+| Validation/tuning | 5 | `synthetic-validation-a` | 1 | 0 |
+| Test | 25 | `synthetic-test-a`, `synthetic-test-b`, `synthetic-test-c` | 5 | 0 |
+
+Validation and test share no signer IDs. There is no training run or official
+dataset split in this suite. For future real exports, keep all sessions from a
+signer in one partition, preserve official splits where licensed, and record
+train/validation/test counts, per-gloss counts, deviations, and model provenance
+locally. Do not tune a model or threshold on test predictions. The reporter checks
+validation/test signer overlap; training separation must also be verified by the
+exporter because training records are not an input to this reporting tool.
+
+**Run and reproduce:** From the repository root, with Node.js 22.6+:
+
+```sh
+npm run evaluate:asl -- fixtures/asl-evaluation/validation.json fixtures/asl-evaluation/test.json 0.7
+npm test -- src/test/asl-evaluation.test.ts
+```
+
+The CLI itself uses no third-party packages. Tests require the project's installed
+development dependencies. Bun can also run the existing CLI:
+
+```sh
+bun run scripts/evaluate-asl.ts fixtures/asl-evaluation/validation.json fixtures/asl-evaluation/test.json 0.7
+```
+
+The threshold `0.7` is a synthetic validation-sweep candidate chosen to exercise
+both acceptance and abstention, **not an approved production threshold**. The
+JSON report on stdout includes the full validation sweep and test confusion matrix.
+Malformed records, overlapping validation/test signers, and thresholds absent
+from the validation sweep fail explicitly. Keep reports from real samples local.
+
+**Expected synthetic output at `0.7`:**
+
+| Expected gloss | Support | Correct | Wrong label | No result | One-vs-rest accuracy | Precision | Recall |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| RESEARCH1 | 5 | 2 | 1 | 2 | 0.84 | 2/3 | 0.40 |
+| DEVELOP1 | 5 | 2 | 1 | 2 | 0.84 | 2/3 | 0.40 |
+| CLOUD1 | 5 | 3 | 1 | 1 | 0.88 | 0.75 | 0.60 |
+| EDIT1 | 5 | 3 | 1 | 1 | 0.88 | 0.75 | 0.60 |
+| DECIDE1 | 5 | 3 | 1 | 1 | 0.88 | 0.75 | 0.60 |
+
+- Test: 13/25 correct (0.52 accuracy), 18/25 covered (0.72), 7/25 abstained
+  (0.28), and 13/18 selective accuracy. Abstentions count as incorrect in overall
+  accuracy. Per-class accuracy is one-vs-rest, not recall.
+- The five wrong-label cells form the cycle RESEARCH1 → DEVELOP1 → CLOUD1 →
+  EDIT1 → DECIDE1 → RESEARCH1, one each. `NO_RESULT` includes five
+  low-confidence predictions, one unsupported label despite confidence 0.99,
+  and one explicit null prediction. A confidence equal to the threshold is accepted.
+- Confidence: 24 scored predictions, mean 0.77875, median 0.9, range 0.4–0.99;
+  explicit null predictions are excluded. Confidence includes scores later
+  abstained from, not just accepted predictions; this is not calibration evidence.
+- Assigned latency inputs: mean/median 22 ms, p95 33 ms (nearest-rank percentile).
+  These are not timings of the script, inference, or an iPhone.
+- The synthetic count check passes with three invented IDs/five trials per class.
+  It does **not** meet the requirement for three actual signers.
+
+**Before any future participant capture:** Explain the following in accessible
+text and confirm affirmative, voluntary consent before enabling capture. If the
+participant declines or withdraws, do not record; use synthetic samples instead.
+This suite requires no participant recruitment or capture.
+
+- **Purpose and choice:** Small-vocabulary isolated-sign evaluation only, not
+  sentence translation or proof of linguistic correctness. Explain whether data
+  is for training, validation, or held-out evaluation. Participation is optional
+  and can stop at any time without losing access to the non-camera app.
+- **What is stored:** Prefer normalized landmarks plus pseudonymous trial/signer
+  IDs, labels, confidence, and latency; for reporting, retain prediction metadata
+  only. Landmarks can still be identifying; do not describe them as anonymous.
+  Do not retain raw video/audio, names, transcripts, or sensitive conversations
+  for this evaluation. Any proposed raw recording requires a separate reviewed
+  purpose, consent, storage/deletion plan, and approval before recording.
+- **Where and access:** Keep human-derived fixtures, reports, and consent records
+  on the collecting teammate's access-controlled device under ignored
+  `local-data/consented-fixtures/`, never Git, issue attachments, shared logs,
+  cloud sync, or inference uploads. Keep any identity/withdrawal lookup separate
+  from exports. ASL Citizen materials remain under their existing separate local
+  directory/license restrictions; participant consent does not override them.
+- **Retention and deletion:** State the collector responsible and exact deletion
+  time before capture. Default to deleting human-derived samples, exports,
+  reports, and lookup records at the end of the session, no later than 24 hours
+  after capture; any extension needs new explicit consent before retention.
+  Give the participant a private withdrawal route and trial/signer reference.
+  On withdrawal, stop collection and remove associated samples and derivatives,
+  including any training artifacts that used them, and confirm deletion.
+  Do not copy to backups or systems where that promise cannot be honored.
+- **Commit boundary:** Only authored synthetic fixtures belong in this repository.
+  Review staged files before committing; the ignore rule is not a privacy or
+  consent enforcement mechanism. Do not commit real landmark arrays or metadata
+  simply because no video/audio is attached. Synthetic fixture files can be
+  deleted locally, but committed history persists; never put participant data
+  there in the first place.
+
+**Data gaps and review status:** This suite covers reporter logic only. No human
+signing, handedness, signing variation, skin tone, mobility range, occlusion,
+camera distance, device/OS, or lighting condition is represented. There is no
+compatible model evaluated by this suite, no measured on-device latency, no
+confidence calibration, and no evidence of real signer-independent recognition.
+No external Deaf/HoH review is recorded for these fixtures; vocabulary meaning,
+usability, and acceptability still require qualified human review. Keep P01's
+real recognition-results checklist item open until permitted samples and an
+approved compatible model are actually evaluated. Do not present these synthetic
+numbers as the app's accuracy or performance.
 
 ### [P08 · #8](https://github.com/argus1/SignifyGesture/issues/8) — Add local on-device inference adapter
 

@@ -53,6 +53,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     """
 
     let camera = CameraCaptureService()
+    #if DEBUG
+    let trialRecorder = DebugTrialRecorder()
+    #endif
     private let speech = NativeSpeechService()
     private let classifier: any SignInferenceProvider = CoreMLSignClassifier()
     private let avatarRuntime: AvatarRuntime = UnavailableAvatarRuntime()
@@ -83,10 +86,20 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
             self.emitEngineStatus(trackingState: state.rawValue)
             if state == .lost {
                 self.resetInferenceState()
+                #if DEBUG
+                DispatchQueue.main.async {
+                    self.trialRecorder.interrupt("Hand tracking lost. Active trial discarded; please retry.")
+                }
+                #endif
             }
         }
         camera.onPoseFrame = { [weak self] frame in
             self?.consume(frame: frame)
+            #if DEBUG
+            DispatchQueue.main.async { [weak self] in
+                self?.trialRecorder.append(frame)
+            }
+            #endif
         }
         camera.onError = { [weak self] message in
             self?.emit(method: "onNativeError", payload: ["feature": "camera", "message": message])
@@ -415,6 +428,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     private func stopCameraCapture() {
+        #if DEBUG
+        trialRecorder.interrupt("Camera stopped. Active trial discarded; please retry.")
+        #endif
         cameraOperationGeneration += 1
         cameraStarting = false
         camera.stop { [weak self] in

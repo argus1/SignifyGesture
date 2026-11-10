@@ -11,6 +11,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "test": "vitest run",
+    "evaluate:asl": "node --experimental-strip-types scripts/evaluate-asl.ts",
     "test:watch": "vitest"
   },
   "overrides": {

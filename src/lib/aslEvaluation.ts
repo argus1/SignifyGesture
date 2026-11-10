@@ -213,6 +213,8 @@ function evaluateAtThreshold(records: PredictionRecord[], threshold: number) {
     accuracy: correctCount / total,
     coveredCount,
     coverage: coveredCount / total,
+    abstainedCount: total - coveredCount,
+    abstentionRate: (total - coveredCount) / total,
     selectiveAccuracy: coveredCount > 0 ? correctCount / coveredCount : null,
     unsupportedPredictionCount: records.filter(
       ({ predictedGloss }) => predictedGloss !== null && !isSupportedGloss(predictedGloss),

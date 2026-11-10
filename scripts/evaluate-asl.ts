@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { buildEvaluationReport, parseEvaluationRecords } from "../src/lib/aslEvaluation";
+import { buildEvaluationReport, parseEvaluationRecords } from "../src/lib/aslEvaluation.ts";
 
 function main() {
   const [validationPath, testPath, thresholdText] = process.argv.slice(2);

@@ -37,6 +37,9 @@ dist-ssr
 # Local-only ASL Citizen source data, derived data, and trained models.
 /local-data/asl-citizen/
 
+# Consented evaluation exports and private consent/withdrawal records.
+/local-data/consented-fixtures/
+
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars

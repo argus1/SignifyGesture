@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { spawnSync } from "node:child_process";
+import syntheticValidation from "../../fixtures/asl-evaluation/validation.json";
+import syntheticTest from "../../fixtures/asl-evaluation/test.json";
 import {
   buildEvaluationReport,
   parseEvaluationRecords,
@@ -61,6 +64,118 @@ function testRecords() {
 }
 
 describe("ASL evaluation", () => {
+  it("reproduces the documented synthetic fixture report without recordings", () => {
+    const validation = parseEvaluationRecords(syntheticValidation, "validation");
+    const test = parseEvaluationRecords(syntheticTest, "test");
+    const report = buildEvaluationReport(validation, test, 0.7);
+
+    expect(report.validation).toMatchObject({ sampleCount: 5, signerCount: 1 });
+    expect(new Set(test.map(({ signerId }) => signerId)).size).toBe(3);
+    expect(report.test).toMatchObject({
+      sampleCount: 25,
+      correctCount: 13,
+      accuracy: 0.52,
+      coveredCount: 18,
+      coverage: 0.72,
+      abstainedCount: 7,
+      abstentionRate: 0.28,
+      selectiveAccuracy: 13 / 18,
+      unsupportedPredictionCount: 1,
+      confidence: {
+        scoredPredictionCount: 24,
+        mean: 0.77875,
+        median: 0.9,
+        min: 0.4,
+        max: 0.99,
+      },
+      latency: { sampleCount: 25, meanMs: 22, medianMs: 22, p95Ms: 33 },
+      coverageRequirements: { meetsMinimum: true },
+    });
+    const expectedRows = {
+      RESEARCH1: [2, 1, 0, 0, 0, 2],
+      DEVELOP1: [0, 2, 1, 0, 0, 2],
+      CLOUD1: [0, 0, 3, 1, 0, 1],
+      EDIT1: [0, 0, 0, 3, 1, 1],
+      DECIDE1: [1, 0, 0, 0, 3, 1],
+    };
+    for (const gloss of SUPPORTED_GLOSSES) {
+      expect(Object.values(report.test.confusionMatrix[gloss] ?? {})).toEqual(expectedRows[gloss]);
+      expect(report.test.classes[gloss]).toMatchObject({
+        support: 5,
+        signerCount: 3,
+        accuracy: gloss === "RESEARCH1" || gloss === "DEVELOP1" ? 0.84 : 0.88,
+        precision: gloss === "RESEARCH1" || gloss === "DEVELOP1" ? 2 / 3 : 0.75,
+        recall: gloss === "RESEARCH1" || gloss === "DEVELOP1" ? 0.4 : 0.6,
+      });
+    }
+  });
+
+  it("keeps committed fixtures prediction-only with explicitly synthetic identities", () => {
+    const allowedKeys = [
+      "trialId",
+      "signerId",
+      "split",
+      "expectedGloss",
+      "predictedGloss",
+      "confidence",
+      "latencyMs",
+    ].sort();
+    for (const row of [...syntheticValidation, ...syntheticTest]) {
+      expect(Object.keys(row).sort()).toEqual(allowedKeys);
+      expect(row.trialId).toMatch(/^synthetic-/);
+      expect(row.signerId).toMatch(/^synthetic-/);
+    }
+  });
+
+  it("reports all-no-result input without invented confidence or selective accuracy", () => {
+    const report = buildEvaluationReport(
+      parseEvaluationRecords(syntheticValidation, "validation"),
+      parseEvaluationRecords(syntheticTest, "test").map((row) => ({
+        ...row,
+        predictedGloss: null,
+        confidence: null,
+      })),
+      0.7,
+    );
+    expect(report.test).toMatchObject({
+      correctCount: 0,
+      coveredCount: 0,
+      abstainedCount: 25,
+      abstentionRate: 1,
+      selectiveAccuracy: null,
+      confidence: {
+        scoredPredictionCount: 0,
+        mean: null,
+        median: null,
+        min: null,
+        max: null,
+      },
+    });
+  });
+
+  it("runs the documented CLI and emits the same JSON report", () => {
+    const result = runEvaluationCLI("0.7");
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toEqual(
+      buildEvaluationReport(
+        parseEvaluationRecords(syntheticValidation, "validation"),
+        parseEvaluationRecords(syntheticTest, "test"),
+        0.7,
+      ),
+    );
+  });
+
+  it("fails the CLI explicitly for missing arguments or a non-validation threshold", () => {
+    for (const threshold of [undefined, "0.71"]) {
+      const result = runEvaluationCLI(threshold);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toContain(
+        threshold === undefined ? "Usage:" : "selected from a validation threshold candidate",
+      );
+    }
+  });
+
   it("reports per-gloss results, abstentions, confusion, confidence, latency, and signer coverage", () => {
     const report = buildEvaluationReport(validationRecords(), testRecords(), 0.7);
 
@@ -120,5 +235,28 @@ describe("ASL evaluation", () => {
     expect(() =>
       parseEvaluationRecords([{ ...testRecords()[0], confidence: 1.1 }], "test"),
     ).toThrow("confidence must be between 0 and 1");
+    expect(() =>
+      parseEvaluationRecords([{ ...testRecords()[0], predictedGloss: null }], "test"),
+    ).toThrow("confidence must be null for no-result");
+    expect(() => parseEvaluationRecords([{ ...testRecords()[0], latencyMs: -1 }], "test")).toThrow(
+      "latencyMs must be a non-negative number",
+    );
   });
 });
+
+function runEvaluationCLI(threshold: string | undefined) {
+  return spawnSync(
+    process.execPath,
+    [
+      "--experimental-strip-types",
+      "scripts/evaluate-asl.ts",
+      "fixtures/asl-evaluation/validation.json",
+      "fixtures/asl-evaluation/test.json",
+      ...(threshold === undefined ? [] : [threshold]),
+    ],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    },
+  );
+}

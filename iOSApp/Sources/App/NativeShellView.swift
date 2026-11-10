@@ -6,6 +6,7 @@ struct NativeShellView: View {
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
     @State private var showsLandmarkInspector = false
+    @State private var showsTrialRecorder = false
     #endif
 
     var body: some View {
@@ -32,12 +33,15 @@ struct NativeShellView: View {
                     }
                     .accessibilityHint("Stops camera capture immediately.")
                     #if DEBUG
-                    Button {
-                        showsLandmarkInspector = true
-                    } label: {
-                        Label("Landmarks", systemImage: "viewfinder")
+                    Menu("Debug") {
+                        Button {
+                            showsLandmarkInspector = true
+                        } label: {
+                            Label("Landmarks", systemImage: "viewfinder")
+                        }
+                        .accessibilityHint("Inspect the latest hand landmarks in memory.")
+                        Button("Capture trials") { showsTrialRecorder = true }
                     }
-                    .accessibilityHint("Inspect the latest hand landmarks in memory.")
                     #endif
                 }
                 .font(.subheadline.weight(.semibold))
@@ -51,6 +55,9 @@ struct NativeShellView: View {
         #if DEBUG
         .sheet(isPresented: $showsLandmarkInspector) {
             LandmarkFrameInspector(camera: bridge.camera)
+        }
+        .sheet(isPresented: $showsTrialRecorder) {
+            DebugTrialRecorderView(recorder: bridge.trialRecorder, cameraActive: bridge.cameraActive)
         }
         #endif
         .alert(

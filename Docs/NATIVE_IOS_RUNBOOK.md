@@ -11,6 +11,79 @@ xcodegen generate --spec iOSApp/project.yml
 
 Do not edit the generated project file directly.
 
+## Debug-only trial capture (local export; no AWS upload)
+
+In a **Debug** build, start the native camera, then choose **Debug → Capture
+trials** in the native camera toolbar. Release builds do not include the recorder or its UI.
+This capture path uses native Vision landmarks, not browser camera/ML and not
+recognizer output, so a missing recognition model does not block collection.
+
+1. Follow the [P07 consent/storage protocol](ASL_translation_hackathon_plan.md#p07-fixture-protocol)
+   before capture. Explain the collector, private withdrawal route, purpose,
+   partition and deletion deadline. The participant must affirm consent; camera
+   permission is not consent to retain training/evaluation samples.
+2. Select a pseudonym `S01`–`S99`, partition and one of the five scoped glosses.
+   Do not enter names. Use the same signer code consistently across sessions;
+   never reuse a code for a different person. Keep identity lookup separate,
+   private and out of exports. Changing the signer resets the consent toggle.
+3. Choose **Start trial**, sign the whole isolated gloss, then **Stop and review**.
+   A trial needs at least 16 frames and is bounded to 10 seconds/120 frames.
+   Tracking loss, camera stop or app interruption discards an active trial rather
+   than silently retaining an incomplete sign. Very short/empty/invalid inputs
+   show an explicit error. Frame count alone does not validate linguistic quality.
+4. Review the gloss, signer, partition, duration and frame count. Accept or
+   discard before proceeding. The pilot target is **3 signers × 5 trials × 5
+   glosses = 75**, with a five-trial cap per signer/gloss and 75 per session.
+   Accepted trials remain in memory; app termination loses unexported trials.
+   Delete session/withdrawal removes all accepted and pending trials, not just
+   the currently selected signer.
+5. Explicitly confirm controlled local storage, then **Prepare protected JSON
+   export** and **Save JSON using system share sheet**. Select only a controlled
+   local destination; the system share sheet may offer cloud services and cannot
+   enforce this policy. On a Mac store under ignored
+   `local-data/consented-fixtures/`. No automatic upload, S3 integration,
+   credentials or inference-provider change is included.
+6. **Delete prepared export** allows further captures. **Delete local session and
+   close** removes the internal export and in-memory trials. Export/storage errors
+   are shown in the sheet. Delete copies saved outside the app yourself, including
+   on withdrawal; the app cannot revoke or delete shared copies.
+
+Each JSON export has `schemaVersion: 1`, purpose, coordinate contract,
+`handOrder`, `jointOrder`, `channels`, device family/OS and `trials`. Each trial has
+a random UUID, pseudonymous `signerID`, split, gloss and variable-length `frames`.
+Each frame has `elapsedMs` relative to the first captured frame and `values`
+(126 floats: anatomical left/right × 21 joints × x/y/confidence). The joint list
+comes directly from the native normalization contract. Coordinates are normalized,
+unmirrored, top-left-origin 2D; absent joints are zero. There is no depth,
+video/audio, absolute capture timestamp, name, transcript or prediction. The
+nominal Vision rate is limited to 12 Hz but actual intervals vary; timestamps
+must be increasing. A training pipeline must explicitly resample/window these
+variable-length trials for a particular model (the current adapter expects 16
+frames). Capture exports are **not** prediction arrays for `evaluate-asl.ts`;
+run an approved model first to obtain evaluation records.
+
+The internal prepared file uses iOS complete file protection and backup exclusion.
+The open recorder expires its session after 24 hours; expired internal exports
+left after termination are removed on the next Debug app launch. iOS does not
+guarantee deletion while the app is suspended/terminated. End-of-session manual
+deletion and collector-managed deletion of external copies remain mandatory.
+
+The recorder rejects a signer's partition changing within the current session.
+Across exports/devices, the collector must maintain a separate partition ledger:
+no signer may appear in training **and** validation/test. Three signers and 75
+trials are a **pilot**, not evidence of sufficient training data or generalization.
+If all three are assigned to training, recruit additional independent signers for
+validation/test; do not reuse their trials as held-out results. Landmarks may
+still identify people. Hand-only 2D capture omits body/face cues and may be
+insufficient to distinguish these glosses.
+
+Simulator tests cover consent, pseudonyms, partition checks, trial review,
+limits, interruptions, JSON round-trip, deletion and expiry using synthetic
+landmarks. Physical-device capture/export, participant recruitment, sample
+quality and model evaluation remain unverified. Future S3 work needs a private
+bucket, explicit separate upload consent/retention, authenticated short-lived
+upload authorization, deletion support and approved AWS provisioning.
+
 ## Requirements
 
 - Xcode with the iOS 17 SDK or newer.
