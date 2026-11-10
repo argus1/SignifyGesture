@@ -14,8 +14,9 @@ after team approval during daily scrum.
 
 ## Native iOS app
 
-See [the native iOS runbook](Docs/NATIVE_IOS_RUNBOOK.md) for setup, simulator
-builds, and device testing.
+See the [native iOS runbook](Docs/NATIVE_IOS_RUNBOOK.md) for setup and
+simulator builds, and the [beginner Xcode device guide](Docs/NATIVE_IOS_XCODE_DEVICE_GUIDE.md)
+for step-by-step instructions to build, install, and test on an iPhone or iPad.
 
 ## Web frontend
 

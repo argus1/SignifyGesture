@@ -46,6 +46,19 @@ button rather than a blank screen.
 3. Serve the frontend on the Mac's LAN interface and pass its reachable URL as
    `SIGNIFY_FRONTEND_URL` when building. Do not use `localhost` for a physical
    iPad; use the Mac's current LAN address and keep it out of tracked files.
+   For **Product > Run**, create the ignored `iOSApp/Config/Local.xcconfig`:
+
+   ```xcconfig
+   SIGNIFY_FRONTEND_URL = http:/$()/<mac-lan-address>:5173
+   ```
+
+   The `$()` keeps `//` from being parsed as an xcconfig comment.
+   `Config/Frontend.xcconfig` includes this optional override for both build
+   configurations. Regenerate the project with
+   `xcodegen generate --spec iOSApp/project.yml` after updating the project
+   specification. The override survives regeneration; update it if the Mac's
+   LAN address changes. Remove the override to restore the simulator's
+   `localhost` default, or pass `SIGNIFY_FRONTEND_URL` on the build command line.
 4. Choose **Product > Run** (not just **Build**) in Xcode. Run builds, installs,
    and launches the app; `xcodebuild ... build` only creates an app bundle.
    Grant camera access and confirm the native
@@ -123,14 +136,40 @@ Each frame is flattened as `[hand][joint][x, y, confidence]` with two hand slots
 order: wrist; thumb CMC/MP/IP/tip; index MCP/PIP/DIP/tip; middle MCP/PIP/DIP/tip;
 ring MCP/PIP/DIP/tip; little MCP/PIP/DIP/tip. Coordinates are normalized to the
 captured image bounds in `[0, 1]`, use a top-left origin, and undo horizontal
-mirroring when the capture output connection is mirrored. Confidence is clamped
+mirroring when fixture input is marked as mirrored. Live capture is explicitly
+unmirrored before Vision determines anatomical handedness; the selfie preview
+and inspector drawing are mirrored for display only. Unknown Vision chirality produces a visible error instead
+of being assigned to the right-hand slot. Confidence is clamped
 to `[0, 1]`; an absent hand or joint is represented by `(0, 0, 0)`. The camera
-path supplies `.up` to Vision, so these coordinates are in captured image space,
-not rotated to a portrait/device-relative frame.
+path uses `AVCaptureDevice.RotationCoordinator` to rotate delivered pixel buffers
+upright relative to gravity, including orientation changes, before supplying
+`.up` to Vision. Coordinates are relative to that upright image, not the
+preview's aspect-fill crop. The inspector flips only its drawing horizontally
+to match the selfie preview; model coordinates and anatomical labels are unchanged.
 
 The Debug build's Landmark Inspector draws the latest normalized frame in memory;
 it writes no camera or landmark data and clears its snapshot when capture stops.
-Synthetic known-coordinate fixtures test the transform and slot ordering. A
-physical-device pose-alignment check is still required: Vision provides 2D
-image-space points, not depth or a 3D hand pose, and the simulator cannot verify
-real camera orientation/mirroring behavior.
+Synthetic known-coordinate fixtures test the transform and slot ordering.
+Physical-device pose-alignment checks supplement these tests: Vision provides
+2D image-space points, not depth or a 3D hand pose, and the simulator cannot
+verify real camera orientation/mirroring behavior.
+
+The initial portrait-device test reported a 90-degree counterclockwise skeleton
+and both single hands assigned to Right. Capture rotation and unmirrored Vision
+input were corrected in response. For regression checks, in portrait test each open palm separately (left blue/right
+orange), both hands crossing, horizontal/vertical motion, index-finger bending,
+and removal of both hands. Repeat in landscape and confirm the skeleton remains
+upright and labels follow anatomical hands; report any persistent Vision
+misclassification rather than substituting screen-position ordering.
+
+The follow-up device test confirmed correct anatomical hand identification and
+an upright skeleton in portrait. A subsequent test confirmed the mirrored
+inspector stays upright with correct anatomical labels and movement in landscape,
+but the camera preview remained rotated 90 degrees. The preview now has its own
+`RotationCoordinator`, observing the preview-specific angle independently of
+capture rotation and preserving selfie mirroring. On November 10, 2026, the
+tester confirmed the preview works in both landscape and portrait directions,
+clearing the final device-verification blocker for issue #6. All 10 native
+simulator tests also pass. This evidence covers landmark mapping on the tested
+device, not recognition accuracy or all-device compatibility; repeat these
+checks when changing camera geometry or targeting another device.

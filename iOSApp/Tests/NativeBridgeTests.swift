@@ -1,4 +1,5 @@
 import WebKit
+import Vision
 import XCTest
 @testable import SignifyGesture
 
@@ -85,6 +86,113 @@ final class NativeBridgeTests: XCTestCase, WKNavigationDelegate, WKScriptMessage
         let payload = try XCTUnwrap(event["payload"] as? [String: Any])
         XCTAssertEqual(payload["feature"] as? String, "camera")
         XCTAssertEqual(payload["message"] as? String, "Missing camera active state.")
+    }
+
+    func testLandmarkFrameNormalizesMirroredKnownPoseAndOrdersHandsBySide() {
+        let leftHand = fixtureHand(
+            side: .left,
+            wrist: LandmarkPoint(x: 0.2, y: 0.3, confidence: 1.2)
+        )
+        let rightHand = fixtureHand(
+            side: .right,
+            wrist: LandmarkPoint(x: 0.8, y: 0.7, confidence: 0.6)
+        )
+
+        let frame = LandmarkFrame(
+            hands: [rightHand, leftHand],
+            timestamp: 12.5,
+            sourceIsMirrored: true
+        )
+
+        XCTAssertEqual(frame.values.count, LandmarkFrame.valueCount)
+        XCTAssertEqual(frame.timestamp, 12.5)
+        XCTAssertEqual(frame.values[0], 0.8, accuracy: 0.0001)
+        XCTAssertEqual(frame.values[1], 0.7, accuracy: 0.0001)
+        XCTAssertEqual(frame.values[2], 1, accuracy: 0.0001)
+        let rightWristOffset = LandmarkHandSide.right.rawValue * LandmarkFrame.jointCount * 3
+        XCTAssertEqual(frame.values[rightWristOffset], 0.2, accuracy: 0.0001)
+        XCTAssertEqual(frame.values[rightWristOffset + 1], 0.3, accuracy: 0.0001)
+        XCTAssertEqual(frame.values[rightWristOffset + 2], 0.6, accuracy: 0.0001)
+        XCTAssertEqual(frame.visibleJointCountByHand, [1, 1])
+    }
+
+    func testLandmarkFrameZeroFillsMissingHandsAndJointsAndClampsCoordinates() {
+        let hand = fixtureHand(
+            side: .left,
+            wrist: LandmarkPoint(x: -0.2, y: 1.4, confidence: 0.5)
+        )
+
+        let frame = LandmarkFrame(hands: [hand], timestamp: 1, sourceIsMirrored: false)
+
+        XCTAssertEqual(frame.values[0], 0)
+        XCTAssertEqual(frame.values[1], 0)
+        XCTAssertEqual(frame.values[2], 0.5)
+        XCTAssertTrue(frame.values.dropFirst(LandmarkFrame.jointCount * 3).allSatisfy { $0 == 0 })
+        XCTAssertTrue(frame.values.dropFirst(3).allSatisfy { $0 == 0 })
+        XCTAssertEqual(frame.visibleJointCountByHand, [1, 0])
+    }
+
+    func testLandmarkFrameSelectsDuplicateHandByConfidenceDeterministically() {
+        let lowerConfidence = fixtureHand(
+            side: .left,
+            wrist: LandmarkPoint(x: 0.2, y: 0.5, confidence: 0.4)
+        )
+        let higherConfidence = fixtureHand(
+            side: .left,
+            wrist: LandmarkPoint(x: 0.8, y: 0.5, confidence: 0.9)
+        )
+
+        let first = LandmarkFrame(
+            hands: [lowerConfidence, higherConfidence],
+            timestamp: 1,
+            sourceIsMirrored: false
+        )
+        let reversed = LandmarkFrame(
+            hands: [higherConfidence, lowerConfidence],
+            timestamp: 1,
+            sourceIsMirrored: false
+        )
+
+        XCTAssertEqual(first.values, reversed.values)
+        XCTAssertEqual(first.values[0], 0.8, accuracy: 0.0001)
+        XCTAssertEqual(first.values[2], 0.9, accuracy: 0.0001)
+    }
+
+    func testVisionChiralityUsesAnatomicalSlotsWithoutGuessingUnknownAsRight() throws {
+        XCTAssertEqual(try LandmarkHandSide(chirality: .left), .left)
+        XCTAssertEqual(try LandmarkHandSide(chirality: .right), .right)
+        XCTAssertThrowsError(try LandmarkHandSide(chirality: .unknown)) { error in
+            guard case HandPoseGeometryError.unknownChirality = error else {
+                return XCTFail("Unknown chirality must surface an explicit geometry error.")
+            }
+        }
+    }
+
+    func testUprightUnmirroredPalmPreservesHorizontalDirectionAndFingerAboveWrist() {
+        var points = Array<LandmarkPoint?>(repeating: nil, count: LandmarkFrame.jointCount)
+        points[0] = LandmarkPoint(x: 0.4, y: 0.2, confidence: 1)
+        points[8] = LandmarkPoint(x: 0.4, y: 0.8, confidence: 1)
+        let frame = LandmarkFrame(
+            hands: [LandmarkHand(side: .left, points: points)],
+            timestamp: 1,
+            sourceIsMirrored: false
+        )
+
+        XCTAssertEqual(frame.values[0], 0.4, accuracy: 0.0001)
+        XCTAssertEqual(frame.values[1], 0.8, accuracy: 0.0001)
+        XCTAssertEqual(frame.values[8 * 3], 0.4, accuracy: 0.0001)
+        XCTAssertEqual(frame.values[8 * 3 + 1], 0.2, accuracy: 0.0001)
+        XCTAssertLessThan(frame.values[8 * 3 + 1], frame.values[1])
+        XCTAssertEqual(frame.visibleJointCountByHand, [2, 0])
+    }
+
+    private func fixtureHand(
+        side: LandmarkHandSide,
+        wrist: LandmarkPoint
+    ) -> LandmarkHand {
+        var points = Array<LandmarkPoint?>(repeating: nil, count: LandmarkFrame.jointCount)
+        points[0] = wrist
+        return LandmarkHand(side: side, points: points)
     }
 
     func testFailedFrontendLoadShowsRetryInsteadOfBlackScreen() async throws {

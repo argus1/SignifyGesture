@@ -20,7 +20,7 @@ Use a Kanban board with **Backlog → Ready → In Progress → Review/Test → 
 ### Definition of done for the sprint
 
 - A fresh checkout can run the demo on a supported iPhone/iOS setup using documented steps.
-- The same app can select local inference or an explicitly enabled AWS endpoint; local mode works offline, while cloud mode sends landmarks only and reports network/service errors visibly.
+- The same app can select local inference or an explicitly enabled AWS endpoint; local inference is network-independent when a compatible model is bundled. Until P08 model and confidence checks pass, the app must report no-result rather than imply offline recognition. Cloud mode sends landmarks only and reports network/service errors visibly.
 - The team can demonstrate a small isolated-sign vocabulary, confidence/uncertainty, transcript correction, and user-controlled speech. The tested vocabulary, signer coverage, and measured results are visible in the demo or README.
 - Camera/cloud consent, privacy limits, accessibility alternatives, and prototype limitations are explained in the UI and pitch.
 - No captured video, landmarks, transcript, or audio is retained by default. Demo/testing uses synthetic content or consented data only.
@@ -39,6 +39,7 @@ Use a Kanban board with **Backlog → Ready → In Progress → Review/Test → 
 - [x] Define a signer-independent test protocol using the official ASL Citizen train/validation/test splits, with at least 3 signers and 5 trials per gloss where licensing permits; otherwise use separately consented signer-created samples and record split deviations. Report per-gloss outcomes, confusion/no-result rates, confidence behavior, and on-device end-to-end latency; do not claim measured performance before running the protocol.
 - [ ] Start a Lovable credit ledger by member before generating prototypes.
 - [ ] Scope optional intelligent help (P16): confirm frontend ownership, screen/control identifiers, demo-device AFM availability, and reviewed help topics. No cloud provisioning is required for this decision.
+- [ ] Start offline operation (P17 · #20): test whether the current TanStack Start/Nitro production build can run as bundled static assets; keep the LAN development workflow unchanged and record build/runtime blockers before selecting an approach.
 
 ### Day 2 — Build parallel vertical slices
 
@@ -47,6 +48,7 @@ Use a Kanban board with **Backlog → Ready → In Progress → Review/Test → 
 - [ ] Implement the local inference adapter and evaluation harness against a fixed input shape; if a suitable model is unavailable, clearly label the limited baseline and keep the interface ready for a model.
 - [ ] Implement and test the AWS endpoint independently against the same contract; do not upload camera frames.
 - [ ] Review wireframes/prototype against VoiceOver, Dynamic Type, contrast, safe areas, and reduced-motion needs.
+- [ ] If the static-build spike passes, package frontend assets in the existing WKWebView app and bundle required fonts/assets; otherwise stop the offline release slice and retain the working LAN flow. Do not switch frameworks on the critical path.
 
 ### Day 3 — Connect the user journey and validate
 
@@ -55,12 +57,14 @@ Use a Kanban board with **Backlog → Ready → In Progress → Review/Test → 
 - [ ] Run the fixed evaluation across the agreed signs and signer samples; capture per-class results, confusion cases, confidence behavior, and measured latency.
 - [ ] Conduct short task-based usability/accessibility checks; include Deaf/HoH participants when available and record when they are not.
 - [ ] Complete privacy/threat-model and standards-scope review. Fix high-severity issues before adding optional features.
+- [ ] Exercise bundled frontend routes and the native bridge with networking disabled; confirm cloud/AWS actions fail visibly and that local data behavior does not imply a successful AWS sync.
 - [ ] Only if the core demo is stable, begin the optional avatar mirroring slice; keep it off the critical path.
 - [ ] If the core demo is stable, integrate the optional P16 help panel and bounded navigation tools; use on-device AFM where available and retain conventional help everywhere. Cloud help remains separately opt-in and subject to account-owner approval.
 
 ### Day 4 — Stabilize, demo, and hand off
 
 - [ ] Rehearse a clean-install end-to-end demo in local mode and, if provisioned, AWS mode; verify offline behavior and failure states.
+- [ ] For P17, install a clean build and test in airplane mode, then retest LAN-based development. Record device/OS coverage and any remaining offline blockers.
 - [ ] Run the accessibility checklist on device, test the full permission/denial/revocation flow, and check transcript corrections and speech controls.
 - [ ] Include avatar mirroring only if it is complete, understandable, and does not displace core reliability or accessibility fixes.
 - [ ] Include intelligent help only if P16 acceptance checks pass; otherwise defer the agent and retain conventional help. Record provider/device coverage, observed latency, and known limitations.
@@ -207,10 +211,12 @@ References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Mi
 **Goal:** Convert Vision observations to a stable, documented inference input.
 
 - [x] Extract the supported hand joints and confidence values for up to two hands; represent missing joints/hands explicitly.
-- [ ] Normalize orientation, mirroring, hand ordering, coordinate range, and confidence according to the agreed model contract.
+- [x] Normalize orientation, mirroring, hand ordering, coordinate range, and confidence according to the documented model contract.
 - [x] Keep frame processing off the main thread and avoid overlapping unbounded inference work.
-- [ ] Add debug visualization or a sample-data inspector that does not persist live camera frames by default.
-- [ ] Verify coordinate mapping with known poses and document Vision’s 2D image-space limitations.
+- [x] Add an opt-in debug landmark inspector; latest-frame data stays in memory and is cleared when capture stops.
+- [x] Verify coordinate mapping with known poses and document Vision’s 2D image-space limitations.
+
+The landmark contract is 2 hands × 21 joints × (x, y, confidence), with left/right slots fixed by chirality, coordinates upright relative to gravity, unmirrored and top-left-origin in [0, 1], and missing values zero-filled. Unknown chirality is reported instead of assigned to Right. Follow-up device tests confirmed upright portrait/landscape inspector orientation, correct anatomical labels and movement, and mirrored inspector display. After independent preview-layer rotation handling was added, the tester confirmed the camera preview works in both landscape and portrait directions on November 10, 2026. All 10 native simulator tests pass; this verifies landmark mapping, not recognition-model accuracy or coverage across all devices.
 
 **Acceptance:** A deterministic landmark sequence can be produced from live capture and fixture input with tested ordering, missing-point, orientation, and confidence behavior.
 
@@ -373,6 +379,46 @@ References: [Alkhoraif’s paper](https://doi.org/10.1016/j.jer.2025.07.006), Mi
 - [ ] **Privacy/cloud separation:** Network inspection confirms no help-provider requests in local-help mode and no camera frames, landmarks, transcript, or audio in any help payload. If cloud help is enabled, tests prove separate consent, authenticated access, opt-out/cancellation, visible timeout/quota/service errors, and no silent provider switch or automatic local-history upload.
 - [ ] **Accessibility:** Help, suggested actions, error states, destination focus, and return/dismiss controls pass on-device VoiceOver and enlarged-text checks; guidance never relies on color, motion, or speech alone.
 - [ ] **Performance/handoff:** Record device/OS/provider, first-response and completed-action latency, and camera responsiveness with/without help using fixed prompts. Set numeric pass/fail budgets before testing; include measured results and only ship the agent slice if those budgets pass. Document untested coverage and cloud blockers without presenting mocks as integrated behavior.
+
+### [P17 · #20](https://github.com/argus1/SignifyGesture/issues/20) — Offline operation
+
+**Track:** iOS / offline reliability · **Suggested owner:** Senior developer + Cross-functional A · **Can start:** Day 1
+
+**Goal:** Launch the Signify app without a development server or network dependency while preserving native camera/Vision and the existing JavaScript bridge. First prefer bundled web assets in the current Swift/WKWebView app; consider Capacitor only if a short proof of concept demonstrates a meaningful advantage without disrupting bridge behavior or XcodeGen. Offline UI/capture is not the same as offline sign recognition: no compatible Core ML model or validated confidence threshold is currently available.
+
+**Dependencies:** P04 for the native shell and bridge; P08 for local recognition/model readiness; P10 for local/cloud mode behavior; P14 for clean-install demo verification. Do not make Capacitor adoption, AWS provisioning, or cloud inference a prerequisite for the offline UI slice.
+
+**Day 1 — Prove build and preserve the dev path**
+
+- [ ] Determine whether the production TanStack Start/Nitro build can run as local static assets without a server; test route navigation and list server-only/runtime blockers.
+- [ ] Define a release-only local asset-loading path while retaining `SIGNIFY_FRONTEND_URL` and LAN reloads for development.
+- [ ] Confirm scope and dependencies with P04, P08, P10, and P14; record a Capacitor go/no-go decision based on evidence, not the general web-wrapper recommendation.
+
+**Day 2 — Package the smallest offline slice**
+
+- [ ] Bundle a proven frontend build in the existing iOS app and load it locally in WKWebView; do not replace the shell or bridge unless the spike shows this is necessary.
+- [ ] Bundle offline-required assets, including fonts, or provide a tested system-font fallback for externally hosted fonts.
+- [ ] Define local session behavior and truthful offline states; do not present the AWS sync stub as durable storage. Defer persistence until retention and deletion behavior are agreed.
+
+**Day 3 — Integrate and fault-test**
+
+- [ ] Verify `NativeASLBridge`, camera start/stop, speech, routes, and error/retry behavior against the packaged frontend.
+- [ ] Verify that the app launches and navigates with networking disabled and that optional cloud features show an explicit unavailable/retry state without silent fallback.
+- [ ] Coordinate with P08: claim offline recognition only after a compatible licensed model and validated confidence policy are bundled and tested; otherwise keep recognition unavailable/no-result and document the limitation.
+
+**Day 4 — Rehearse and hand off**
+
+- [ ] Install a clean build on a supported simulator/device, enable airplane mode before launch, and test launch, primary routes, relaunch, native bridge, camera lifecycle, and local state behavior.
+- [ ] Retest the LAN development workflow and document separate dev/release setup, device/OS coverage, known limitations, and fallback instructions.
+- [ ] If static bundling is blocked, retain the working LAN path, record the exact blocker and next experiment, and defer framework migration rather than jeopardizing the demo.
+
+**Acceptance criteria**
+
+- [ ] A clean install opens bundled app assets in airplane mode without contacting a development or production web server; primary routes and native bridge actions work.
+- [ ] Offline/local state and cloud-unavailable behavior are explicit and truthful; the AWS stub is not treated as durable persistence, and optional cloud requests do not silently substitute results.
+- [ ] The existing LAN-hosted development workflow still works independently of the bundled release path.
+- [ ] Offline sign recognition is claimed only if a compatible bundled model, validated confidence policy, and offline fixture/live-device test pass. If model/device access is unavailable, record it as an open acceptance blocker and describe the actual offline scope accurately.
+- [ ] The final handoff documents the selected approach, commands, platform coverage, remaining blockers, and Capacitor decision.
 
 ## References
 
