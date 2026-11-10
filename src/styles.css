@@ -139,7 +139,8 @@
 html[data-native-host],
 html[data-native-host] body,
 html[data-native-host] .app-backdrop:has(.native-viewport),
-html[data-native-host] main:has(.native-viewport) {
+html[data-native-host] main:has(.native-viewport),
+html[data-native-host] .native-camera-backdrop {
   background: transparent !important;
 }
 

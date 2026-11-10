@@ -1,0 +1,16 @@
+name: ASL Citizen data guard
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check-tracked-data:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject tracked dataset and model artifacts
+        run: python3 scripts/check-asl-citizen-data.py

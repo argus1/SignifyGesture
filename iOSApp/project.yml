@@ -17,6 +17,7 @@ settings:
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
     CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: S8CKN5R4P7
     TARGETED_DEVICE_FAMILY: "1,2"
     GENERATE_INFOPLIST_FILE: NO
     INFOPLIST_FILE: Config/Info.plist
@@ -29,6 +30,9 @@ schemes:
         SignifyGesture: all
     run:
       config: Debug
+    test:
+      targets:
+        - SignifyGestureTests
 
 targets:
   SignifyGesture:
@@ -44,3 +48,15 @@ targets:
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Local network access can load the team’s development UI from your computer."
         INFOPLIST_KEY_SIGNIFY_FRONTEND_URL: "$(SIGNIFY_FRONTEND_URL)"
         CODE_SIGN_STYLE: Automatic
+
+  SignifyGestureTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: SignifyGesture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture.tests
+        GENERATE_INFOPLIST_FILE: YES

@@ -32,20 +32,29 @@ xcodebuild \
 
 The default frontend URL is `http://localhost:5173`, suitable for the local
 development setup. Start the Lovable/Vite frontend before launching the app.
+The wrapper loads this URL in a `WKWebView`; it does not bundle the React app.
+If the URL is unreachable, the app displays a connection error with a Retry
+button rather than a blank screen.
 
 ## Physical-device build
 
 1. Connect the iPad, open the generated project in Xcode, and select the device.
-2. Set the development team for the `SignifyGesture` target in Xcode signing
-   settings. Do not commit machine- or team-specific signing settings.
+2. The development team is configured in `iOSApp/project.yml` and is retained
+   when XcodeGen regenerates the project. Xcode must still have access to the
+   matching Apple developer account, signing certificate, and device
+   provisioning profile.
 3. Serve the frontend on the Mac's LAN interface and pass its reachable URL as
    `SIGNIFY_FRONTEND_URL` when building. Do not use `localhost` for a physical
    iPad; use the Mac's current LAN address and keep it out of tracked files.
-4. Build and launch from Xcode, grant camera access, and confirm the native
+4. Choose **Product > Run** (not just **Build**) in Xcode. Run builds, installs,
+   and launches the app; `xcodebuild ... build` only creates an app bundle.
+   Grant camera access and confirm the native
    preview and tracking status. Confirm the app explains camera use before the
    iOS permission prompt, and that denial provides a Settings path. Background
    the app and confirm capture stops; return to the foreground and restart from
-   the frontend camera control. The native stop control must also stop capture.
+   the frontend **Start camera** control. Both the frontend **Stop camera**
+   control and the native stop control must stop capture. Switching to Speech
+   or leaving a camera screen must also stop capture.
    Camera frames remain on device.
 
 For example, replace the placeholder with the current Mac LAN address:
@@ -59,9 +68,45 @@ xcodebuild \
   build
 ```
 
+For a command-line run, add `-derivedDataPath iOSApp/.device-build` to the build
+command, then explicitly install and launch:
+
+```sh
+xcrun devicectl device install app --device '<device-identifier>' \
+  iOSApp/.device-build/Build/Products/Debug-iphoneos/SignifyGesture.app
+xcrun devicectl device process launch --device '<device-identifier>' \
+  com.argussun.signifygesture
+```
+
+Keep the frontend running with `npm run dev -- --host 0.0.0.0 --port 5173`.
+The iPad must be able to reach that address; approve local-network access if
+prompted. A launch with an unreachable frontend is not a camera verification.
+
 Use the ignored `Docs/NATIVE_IOS_DEVICE_RUNBOOK.local.md` for local device
 identifiers. The team-facing runbook must not contain device IDs, LAN addresses,
 provisioning profiles, or signing credentials.
+
+## Bridge regression checks
+
+The frontend posts flat commands such as
+`{ type: "triggerCameraToggle", active: true }` to `aslBridge`. Swift accepts
+that contract and the older `{ method, payload }` envelope. Errors return through
+`onNativeError` and appear in the web UI.
+
+```sh
+npm test -- src/test/native-bridge.test.ts src/test/camera-lifecycle.test.tsx
+xcodegen generate --spec iOSApp/project.yml
+xcodebuild test \
+  -project iOSApp/SignifyGesture.xcodeproj \
+  -scheme SignifyGesture \
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  CODE_SIGNING_ALLOWED=NO
+```
+
+The native tests exercise actual WKWebView messages and Swift replies. Simulator
+tests do not verify physical camera capture. Keep issue #5's final checkbox open
+until an iPad run confirms permission grant/denial/revocation, background stop,
+screen/mode exit, and stop/restart without a frozen UI.
 
 ## Current capability boundary
 
