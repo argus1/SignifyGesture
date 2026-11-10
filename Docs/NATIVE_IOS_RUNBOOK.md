@@ -115,3 +115,22 @@ native speech, and a WKWebView bridge. It does not include a compatible trained
 Core ML model, a validated confidence threshold, an AWS integration, or a VRM
 renderer. Until those are verified, recognition must remain a no-result state;
 do not report tracking landmarks as recognized signs.
+
+## Vision landmark input contract
+
+Each frame is flattened as `[hand][joint][x, y, confidence]` with two hand slots
+(anatomical left at index 0, right at index 1) and 21 joints per hand in this
+order: wrist; thumb CMC/MP/IP/tip; index MCP/PIP/DIP/tip; middle MCP/PIP/DIP/tip;
+ring MCP/PIP/DIP/tip; little MCP/PIP/DIP/tip. Coordinates are normalized to the
+captured image bounds in `[0, 1]`, use a top-left origin, and undo horizontal
+mirroring when the capture output connection is mirrored. Confidence is clamped
+to `[0, 1]`; an absent hand or joint is represented by `(0, 0, 0)`. The camera
+path supplies `.up` to Vision, so these coordinates are in captured image space,
+not rotated to a portrait/device-relative frame.
+
+The Debug build's Landmark Inspector draws the latest normalized frame in memory;
+it writes no camera or landmark data and clears its snapshot when capture stops.
+Synthetic known-coordinate fixtures test the transform and slot ordering. A
+physical-device pose-alignment check is still required: Vision provides 2D
+image-space points, not depth or a 3D hand pose, and the simulator cannot verify
+real camera orientation/mirroring behavior.
