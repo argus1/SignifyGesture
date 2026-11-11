@@ -1,0 +1,255 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: SignifyGesture ARM deployment server with HTTPS and instance-scoped power controls.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  SubnetId:
+    Type: AWS::EC2::Subnet::Id
+  ImageId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64
+  Hostname:
+    Type: String
+    Default: signify.hcavra.com
+    AllowedPattern: "[a-z0-9][a-z0-9.-]+[a-z0-9]"
+
+Resources:
+  Artifacts:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireDeploymentArtifacts
+            Status: Enabled
+            Prefix: releases/
+            ExpirationInDays: 7
+      Tags:
+        - Key: Project
+          Value: SignifyGesture
+  ArtifactsPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref Artifacts
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt Artifacts.Arn
+              - !Sub "${Artifacts.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: false
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Policies:
+        - PolicyName: ReadDeploymentArtifacts
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub "${Artifacts.Arn}/releases/*"
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref InstanceRole
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Public HTTPS and HTTP ACME challenges; administration uses SSM, not SSH.
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Project
+          Value: SignifyGesture
+  Server:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: t4g.small
+      CreditSpecification:
+        CPUCredits: standard
+      IamInstanceProfile: !Ref InstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !Ref WebSecurityGroup
+      MetadataOptions:
+        HttpTokens: required
+        HttpPutResponseHopLimit: 1
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: gp3
+            VolumeSize: 20
+            Encrypted: true
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: signify-deployment
+        - Key: Project
+          Value: SignifyGesture
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          dnf install -y nodejs22 tar gzip
+          cd /tmp
+          curl --fail --silent --show-error --location --retry 3 \
+            -o caddy.tar.gz https://github.com/caddyserver/caddy/releases/download/v2.10.2/caddy_2.10.2_linux_arm64.tar.gz
+          echo '6ce061a690312ab38367df3c5d5f89a2e4a263e7300d300d87356211bb81e79b15933e6d6203e03fbf26f15cc0311f264805f336147dbdd24938d84b57a4421c  caddy.tar.gz' | sha512sum -c -
+          tar -xzf caddy.tar.gz -C /usr/local/bin caddy
+          chmod 755 /usr/local/bin/caddy
+          rm /tmp/caddy.tar.gz
+          useradd --system --home-dir /var/lib/caddy --shell /sbin/nologin caddy
+          useradd --system --home-dir /opt/signify --shell /sbin/nologin signify
+          install -d -o caddy -g caddy /var/lib/caddy
+          install -d /etc/caddy /opt/signify/releases
+          cat > /etc/caddy/Caddyfile <<'CADDY'
+          ${Hostname} {
+              reverse_proxy 127.0.0.1:3000
+          }
+          CADDY
+          cat > /etc/systemd/system/caddy.service <<'UNIT'
+          [Unit]
+          Description=Signify HTTPS reverse proxy
+          After=network-online.target signify.service
+          Wants=network-online.target
+          [Service]
+          User=caddy
+          Group=caddy
+          Environment=XDG_DATA_HOME=/var/lib/caddy
+          Environment=XDG_CONFIG_HOME=/var/lib/caddy
+          ExecStart=/usr/local/bin/caddy run --config /etc/caddy/Caddyfile --adapter caddyfile
+          ExecReload=/usr/local/bin/caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          Restart=on-failure
+          RestartSec=5
+          AmbientCapabilities=CAP_NET_BIND_SERVICE
+          CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          ReadWritePaths=/var/lib/caddy
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          cat > /etc/systemd/system/signify.service <<'UNIT'
+          [Unit]
+          Description=SignifyGesture Node frontend
+          After=network-online.target
+          Wants=network-online.target
+          [Service]
+          User=signify
+          Group=signify
+          WorkingDirectory=/opt/signify/current
+          Environment=NODE_ENV=production
+          Environment=HOST=127.0.0.1
+          Environment=PORT=3000
+          ExecStart=/usr/bin/node-22 /opt/signify/current/server/index.mjs
+          Restart=on-failure
+          RestartSec=5
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ProtectHome=true
+          PrivateTmp=true
+          [Install]
+          WantedBy=multi-user.target
+          UNIT
+          systemctl daemon-reload
+          systemctl enable signify caddy
+          touch /opt/signify/bootstrap-complete
+  Address:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      Tags:
+        - Key: Project
+          Value: SignifyGesture
+  AddressAssociation:
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      AllocationId: !GetAtt Address.AllocationId
+      InstanceId: !Ref Server
+  PowerUser:
+    Type: AWS::IAM::User
+    Properties:
+      UserName: signify-deployment-power
+      Tags:
+        - Key: Project
+          Value: SignifyGesture
+      Policies:
+        - PolicyName: ControlOnlySignifyDeployment
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: PowerThisInstanceOnly
+                Effect: Allow
+                Action:
+                  - ec2:StartInstances
+                  - ec2:StopInstances
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/${Server}"
+              - Sid: ConsoleInventory
+                Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  - ec2:DescribeTags
+                  - ec2:DescribeRegions
+                Resource: "*"
+              - Sid: ChangeOwnConsolePassword
+                Effect: Allow
+                Action: iam:ChangePassword
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:user/signify-deployment-power"
+              - Sid: ReadPasswordRequirements
+                Effect: Allow
+                Action: iam:GetAccountPasswordPolicy
+                Resource: "*"
+
+Outputs:
+  InstanceId:
+    Value: !Ref Server
+  PublicIp:
+    Value: !Ref Address
+  ArtifactsBucket:
+    Value: !Ref Artifacts
+  SiteUrl:
+    Value: !Sub "https://${Hostname}"
+  PowerUserName:
+    Value: !Ref PowerUser

@@ -30,6 +30,11 @@ bun run dev
 Run frontend tests with `bun test` and create a production build with
 `bun run build`.
 
+For the team's HTTPS frontend on AWS EC2, see the
+[EC2 deployment guide](Docs/EC2_DEPLOYMENT.md). Its Node production target uses
+`npm run build:ec2`; `bash scripts/deploy-ec2.sh` publishes through SSM without
+public SSH access.
+
 ## CI and agentic workflows
 
 See the [agentic workflows development plan](Docs/agentic-workflows.md) for the
