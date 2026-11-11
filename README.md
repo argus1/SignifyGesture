@@ -30,6 +30,13 @@ bun run dev
 Run frontend tests with `bun test` and create a production build with
 `bun run build`.
 
+## CI and agentic workflows
+
+See the [agentic workflows development plan](Docs/agentic-workflows.md) for the
+six bounded agents, acceptance checklists, deterministic CI, and activation
+requirements. Agents are disabled until explicitly enabled; code-writing agents
+also require a protected approval environment and only create draft PRs.
+
 ## Repeatable evaluation fixtures
 
 From the repository root, run the synthetic reporting check without a model,

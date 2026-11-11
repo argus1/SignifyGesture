@@ -1,0 +1,69 @@
+name: Native CI
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - "iOSApp/**"
+      - ".github/workflows/native-ci.yml"
+  pull_request:
+    paths:
+      - "iOSApp/**"
+      - ".github/workflows/native-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  simulator:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install XcodeGen if missing
+        run: |
+          if ! command -v xcodegen >/dev/null; then
+            brew install xcodegen
+          fi
+          xcodegen --version
+          xcodebuild -version
+      - name: Generate project from source specification
+        run: xcodegen generate --spec iOSApp/project.yml
+      - name: Select an available iPhone simulator
+        id: simulator
+        run: |
+          device_id="$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [device for runtime, devices in runtimes.items()
+                    if "iOS-" in runtime for device in devices
+                    if device.get("isAvailable") and device["name"].startswith("iPhone")]
+          if not phones:
+              raise SystemExit("No available iPhone simulator; native verification is blocked.")
+          print(phones[0]["udid"])
+          ')"
+          echo "id=$device_id" >> "$GITHUB_OUTPUT"
+      - name: Run unsigned Debug simulator tests
+        env:
+          SIMULATOR_ID: ${{ steps.simulator.outputs.id }}
+        run: |
+          xcodebuild \
+            -project iOSApp/SignifyGesture.xcodeproj \
+            -scheme SignifyGesture \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            CODE_SIGNING_ALLOWED=NO test
+      - name: Verify unsigned Release simulator build
+        run: |
+          xcodebuild \
+            -project iOSApp/SignifyGesture.xcodeproj \
+            -scheme SignifyGesture \
+            -configuration Release \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build
