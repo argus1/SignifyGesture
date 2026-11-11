@@ -11,6 +11,14 @@ xcodegen generate --spec iOSApp/project.yml
 
 Do not edit the generated project file directly.
 
+## App icon
+
+The native asset catalog is in `iOSApp/Sources/Assets.xcassets`. Its `AppIcon`
+contains a 1024-by-1024, opaque PNG with the Signify mark centered on white;
+Xcode produces the required iPhone and iPad icon sizes from it. The original
+vector mark is also available as the `SignifyMark` image asset. When changing
+the artwork, update both assets and keep the app icon square and opaque.
+
 ## Debug-only trial capture (local export; no AWS upload)
 
 In a **Debug** build, start the native camera, then choose **Debug → Capture
