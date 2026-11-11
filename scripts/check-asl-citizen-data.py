@@ -8,6 +8,10 @@ from pathlib import PurePosixPath
 
 ASL_CITIZEN_MARKER = "asl-citizen"
 ASL_CITIZEN_UNDERSCORE_MARKER = "asl_citizen"
+GUARD_INFRASTRUCTURE_PATHS = {
+    ".github/workflows/asl-citizen-data-guard.yml",
+    "scripts/check-asl-citizen-data.py",
+}
 BLOCKED_SUFFIXES = {
     ".avi",
     ".csv",
@@ -40,6 +44,8 @@ BLOCKED_SUFFIXES = {
 def find_blocked_paths(paths: list[str]) -> list[str]:
     blocked = []
     for path in paths:
+        if path in GUARD_INFRASTRUCTURE_PATHS:
+            continue
         normalized = path.lower()
         path_parts = PurePosixPath(normalized).parts
         if (
@@ -73,7 +79,7 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
-    print("No ASL Citizen-named paths or blocked media/model artifacts are tracked.")
+    print("No blocked ASL Citizen paths or media/model artifacts are tracked.")
     return 0
 
 
