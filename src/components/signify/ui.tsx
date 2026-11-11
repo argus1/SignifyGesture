@@ -417,11 +417,10 @@ export function TabBar() {
   );
 }
 
-/** Profile sheet with System / Light / Dark (spec section 10). */
+/** Profile sheet: Appearance, Light or Dark. */
 function ThemeSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { choice, setChoice } = useTheme();
   const opts: { id: ThemeChoice; label: string }[] = [
-    { id: "system", label: "System" },
     { id: "light", label: "Light" },
     { id: "dark", label: "Dark" },
   ];
