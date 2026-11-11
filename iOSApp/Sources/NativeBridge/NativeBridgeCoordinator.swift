@@ -44,7 +44,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     static let webBridgeBootstrap = """
     (() => {
       const bridge = window.NativeASLBridge = window.NativeASLBridge || {};
-      const post = (method, payload) => window.webkit.messageHandlers.aslBridge.postMessage({ method, payload });
+      const post = (type, payload) => window.webkit.messageHandlers.aslBridge.postMessage({ type, ...payload });
       bridge.triggerCameraToggle = bridge.triggerCameraToggle || ((active) => post("triggerCameraToggle", { active }));
       bridge.triggerTTSPlayback = bridge.triggerTTSPlayback || ((text, voiceId) => post("triggerTTSPlayback", { text, voiceId }));
       bridge.triggerAvatarReplay = bridge.triggerAvatarReplay || ((glossSequence) => post("triggerAvatarReplay", { glossSequence }));
@@ -53,6 +53,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     """
 
     let camera = CameraCaptureService()
+    #if DEBUG
+    let trialRecorder = DebugTrialRecorder()
+    #endif
     private let speech = NativeSpeechService()
     private let classifier: any SignInferenceProvider = CoreMLSignClassifier()
     private let avatarRuntime: AvatarRuntime = UnavailableAvatarRuntime()
@@ -67,7 +70,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     @Published private(set) var cameraActive = false
     @Published private(set) var cameraStarting = false
     @Published private(set) var cameraPermissionPrompt: CameraPermissionPrompt?
+    private var frontendLoadFailed = false
     private var recentFrames: [[Float]] = []
+    private var recentFrameTimes: [TimeInterval] = []
     private var lastPublishedGloss: String?
     private var predictionInFlight = false
     private var inferenceGeneration = 0
@@ -77,10 +82,24 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     override init() {
         super.init()
         camera.onTrackingStateChange = { [weak self] state in
-            self?.emitEngineStatus(trackingState: state.rawValue)
+            guard let self else { return }
+            self.emitEngineStatus(trackingState: state.rawValue)
+            if state == .lost {
+                self.resetInferenceState()
+                #if DEBUG
+                DispatchQueue.main.async {
+                    self.trialRecorder.interrupt("Hand tracking lost. Active trial discarded; please retry.")
+                }
+                #endif
+            }
         }
         camera.onPoseFrame = { [weak self] frame in
             self?.consume(frame: frame)
+            #if DEBUG
+            DispatchQueue.main.async { [weak self] in
+                self?.trialRecorder.append(frame)
+            }
+            #endif
         }
         camera.onError = { [weak self] message in
             self?.emit(method: "onNativeError", payload: ["feature": "camera", "message": message])
@@ -93,12 +112,67 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     func attach(webView: WKWebView) {
         self.webView = webView
         guard webView.url == nil else { return }
+        loadFrontend()
+    }
+
+    private func loadFrontend() {
         if let urlString = Bundle.main.object(forInfoDictionaryKey: "SIGNIFY_FRONTEND_URL") as? String,
            let url = validatedFrontendURL(urlString) {
-            webView.load(URLRequest(url: url))
+            frontendLoadFailed = false
+            webView?.load(URLRequest(url: url))
         } else {
-            webView.loadHTMLString(Self.frontendNotConfiguredHTML, baseURL: nil)
+            showFrontendLoadError("The frontend URL is not configured in this app build.")
         }
+    }
+
+    func frontendLoadDidFail(_ error: Error) {
+        let error = error as NSError
+        guard error.domain != NSURLErrorDomain || error.code != NSURLErrorCancelled else { return }
+        guard !frontendLoadFailed else { return }
+        showFrontendLoadError(error.localizedDescription)
+    }
+
+    func frontendLoadDidFinish(_ webView: WKWebView) {
+        guard let scheme = webView.url?.scheme?.lowercased(),
+              scheme == "http" || scheme == "https" else { return }
+        frontendLoadFailed = false
+    }
+
+    private func showFrontendLoadError(_ message: String) {
+        frontendLoadFailed = true
+        let safeMessage = Self.escapeHTML(message)
+        webView?.loadHTMLString(
+            """
+            <!doctype html>
+            <html lang="en"><head><meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Signify connection issue</title>
+            <style>
+              body { box-sizing: border-box; margin: 0; min-height: 100vh; display: grid; place-items: center;
+                padding: 32px; background: #101914; color: #f5f7f5;
+                font: 17px -apple-system, BlinkMacSystemFont, sans-serif; }
+              main { width: min(100%, 480px); } h1 { font-size: 26px; }
+              p { color: #c6d0ca; line-height: 1.5; overflow-wrap: anywhere; }
+              button { margin-top: 16px; border: 0; border-radius: 24px; padding: 14px 24px;
+                background: #7cf0bf; color: #10251b; font: inherit; font-weight: 700; }
+            </style></head>
+            <body><main><h1>Can't connect to Signify</h1>
+            <p>The app opened, but couldn't load its web interface. Make sure the development server is running
+            and your iPad can reach the Mac, then try again.</p>
+            <p id="load-error">\(safeMessage)</p>
+            <button type="button" onclick="window.webkit.messageHandlers.aslBridge.postMessage({type:'reloadFrontend'})">Retry</button>
+            </main></body></html>
+            """,
+            baseURL: nil
+        )
+    }
+
+    private static func escapeHTML(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "'", with: "&#39;")
     }
 
     private func validatedFrontendURL(_ value: String) -> URL? {
@@ -115,24 +189,30 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         guard classifier.availabilityError == nil,
               Self.validatedConfidenceThreshold != nil else { return }
 
+        let frameReceivedAt = ProcessInfo.processInfo.systemUptime
         inferenceStateQueue.async { [weak self] in
             guard let self else { return }
 
             self.recentFrames.append(frame.values)
+            self.recentFrameTimes.append(frameReceivedAt)
             if self.recentFrames.count > 16 {
-                self.recentFrames.removeFirst(self.recentFrames.count - 16)
+                let excessCount = self.recentFrames.count - 16
+                self.recentFrames.removeFirst(excessCount)
+                self.recentFrameTimes.removeFirst(excessCount)
             }
             guard self.recentFrames.count == 16, !self.predictionInFlight else { return }
 
             self.predictionInFlight = true
             let generation = self.inferenceGeneration
             let sequence = self.recentFrames.flatMap { $0 }
+            let sequenceStartedAt = self.recentFrameTimes[0]
             self.classifier.predict(sequence: sequence) { [weak self] result in
                 guard let self else { return }
+                let latencyMs = max(0, (ProcessInfo.processInfo.systemUptime - sequenceStartedAt) * 1_000)
                 self.inferenceStateQueue.async {
                     guard generation == self.inferenceGeneration else { return }
                     self.predictionInFlight = false
-                    self.handlePrediction(result)
+                    self.handlePrediction(result, latencyMs: latencyMs)
                 }
             }
         }
@@ -142,21 +222,29 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         inferenceStateQueue.sync {
             inferenceGeneration += 1
             recentFrames.removeAll(keepingCapacity: true)
+            recentFrameTimes.removeAll(keepingCapacity: true)
             lastPublishedGloss = nil
             predictionInFlight = false
         }
     }
 
-    private func handlePrediction(_ result: Result<SignPrediction, Error>) {
+    private func handlePrediction(_ result: Result<SignPrediction, Error>, latencyMs: Double) {
+        DispatchQueue.main.async { [weak self] in
+            self?.emitEngineStatus(trackingState: "tracking", inferenceLatencyMs: latencyMs)
+        }
         switch result {
         case .success(let prediction):
             guard let threshold = Self.validatedConfidenceThreshold,
                   prediction.confidence >= threshold else {
-                emitRecognitionState("noResult", message: "The validation-set confidence threshold has not been established.")
+                emitRecognitionState(
+                    "noResult",
+                    message: "The validation-set confidence threshold has not been established.",
+                    latencyMs: latencyMs
+                )
                 return
             }
             guard Self.supportedGlosses.contains(prediction.gloss) else {
-                emitRecognitionState("unsupportedGloss")
+                emitRecognitionState("unsupportedGloss", latencyMs: latencyMs)
                 return
             }
             guard lastPublishedGloss != prediction.gloss else { return }
@@ -167,11 +255,12 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
                     "gloss": prediction.gloss,
                     "confidence": prediction.confidence,
                     "isFinal": false,
-                    "timestamp": Date().timeIntervalSince1970
+                    "timestamp": Date().timeIntervalSince1970,
+                    "latencyMs": latencyMs
                 ]
             )
         case .failure(let error):
-            emitRecognitionState("noResult", message: error.localizedDescription)
+            emitRecognitionState("noResult", message: error.localizedDescription, latencyMs: latencyMs)
         }
     }
 
@@ -190,9 +279,10 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         )
     }
 
-    private func emitRecognitionState(_ state: String, message: String? = nil) {
+    private func emitRecognitionState(_ state: String, message: String? = nil, latencyMs: Double? = nil) {
         var payload: [String: Any] = ["state": state]
         if let message { payload["message"] = message }
+        if let latencyMs { payload["latencyMs"] = latencyMs }
         emit(method: "onRecognitionStatusChange", payload: payload)
     }
 
@@ -338,6 +428,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     private func stopCameraCapture() {
+        #if DEBUG
+        trialRecorder.interrupt("Camera stopped. Active trial discarded; please retry.")
+        #endif
         cameraOperationGeneration += 1
         cameraStarting = false
         camera.stop { [weak self] in
@@ -357,8 +450,16 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     private func handle(_ message: [String: Any]) {
-        guard let method = message["method"] as? String,
-              let payload = message["payload"] as? [String: Any] else {
+        let method: String
+        let payload: [String: Any]
+        if let type = message["type"] as? String {
+            method = type
+            payload = message
+        } else if let legacyMethod = message["method"] as? String,
+                  let legacyPayload = message["payload"] as? [String: Any] {
+            method = legacyMethod
+            payload = legacyPayload
+        } else {
             emit(method: "onNativeError", payload: ["feature": "bridge", "message": "Malformed native bridge command."])
             return
         }
@@ -397,18 +498,14 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
                 method: "onCloudSyncStatusChange",
                 payload: ["state": "unavailable", "message": "Cloud sync is not configured in the native shell."]
             )
+        case "reloadFrontend":
+            frontendLoadFailed = false
+            loadFrontend()
         default:
             emit(method: "onNativeError", payload: ["feature": "bridge", "message": "Unsupported bridge command: \(method)"])
         }
     }
 
-    private static let frontendNotConfiguredHTML = """
-    <!doctype html>
-    <html><head><meta name="viewport" content="width=device-width, initial-scale=1"></head>
-    <body style="background:transparent;color:white;font:16px -apple-system;padding:24px">
-    <p>Lovable frontend URL is not configured. Start the frontend and set SIGNIFY_FRONTEND_URL.</p>
-    </body></html>
-    """
 }
 
 extension NativeBridgeCoordinator: WKScriptMessageHandler {
@@ -424,4 +521,20 @@ extension NativeBridgeCoordinator: WKScriptMessageHandler {
     }
 }
 
-extension NativeBridgeCoordinator: WKNavigationDelegate {}
+extension NativeBridgeCoordinator: WKNavigationDelegate {
+    func webView(
+        _ webView: WKWebView,
+        didFailProvisionalNavigation navigation: WKNavigation!,
+        withError error: Error
+    ) {
+        frontendLoadDidFail(error)
+    }
+
+    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+        frontendLoadDidFail(error)
+    }
+
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        frontendLoadDidFinish(webView)
+    }
+}

@@ -3,7 +3,7 @@ import { forwardRef, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 import { Hand, Mic, ArrowLeftRight, AudioLines } from "lucide-react";
 import { TopBar, TabBar } from "@/components/signify/ui";
-import { CameraViewport } from "@/components/signify/CameraViewport";
+import { CameraControl, CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
 import { cn } from "@/lib/utils";
 import { seo } from "@/lib/seo";
@@ -90,9 +90,9 @@ function Home() {
   return (
     <div className="relative flex flex-1 flex-col">
       {/* Full-screen background: camera (signing) and white (speech) cross-fade on swap */}
-      <div aria-hidden className="absolute inset-0 bg-background" />
+      <div aria-hidden className={cn("absolute inset-0 bg-background", scene && "native-camera-backdrop")} />
       <div className={cn("absolute inset-0 transition-opacity duration-500 ease-out", scene ? "opacity-100" : "pointer-events-none opacity-0")}>
-        <CameraViewport className="absolute inset-0" label="Native camera" />
+        <CameraViewport className="absolute inset-0" label="Native camera" enabled={scene} />
         {/* Scrims keep floating text readable over any camera image */}
         <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-gradient-to-b from-black/45 to-transparent" />
         <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/50 to-transparent" />
@@ -101,6 +101,7 @@ function Home() {
       <div className="relative z-10 flex flex-1 flex-col">
         <TopBar onDark={scene} />
         <DirectionBar fromAsl={fromAsl} light={!scene} onSwapStart={() => setScene((v) => !v)} onSwap={() => setFromAsl((v) => !v)} />
+        {scene && <CameraControl />}
 
         {/* Center cue: hand (signing) and voice bars (speech) cross-fade */}
         <div className="relative flex flex-1 items-center justify-center">

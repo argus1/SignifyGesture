@@ -1,0 +1,47 @@
+[
+  {
+    "trialId": "synthetic-validation-0",
+    "signerId": "synthetic-validation-a",
+    "split": "validation",
+    "expectedGloss": "RESEARCH1",
+    "predictedGloss": "RESEARCH1",
+    "confidence": 0.6,
+    "latencyMs": 20
+  },
+  {
+    "trialId": "synthetic-validation-1",
+    "signerId": "synthetic-validation-a",
+    "split": "validation",
+    "expectedGloss": "DEVELOP1",
+    "predictedGloss": "DEVELOP1",
+    "confidence": 0.65,
+    "latencyMs": 21
+  },
+  {
+    "trialId": "synthetic-validation-2",
+    "signerId": "synthetic-validation-a",
+    "split": "validation",
+    "expectedGloss": "CLOUD1",
+    "predictedGloss": "CLOUD1",
+    "confidence": 0.7,
+    "latencyMs": 22
+  },
+  {
+    "trialId": "synthetic-validation-3",
+    "signerId": "synthetic-validation-a",
+    "split": "validation",
+    "expectedGloss": "EDIT1",
+    "predictedGloss": "EDIT1",
+    "confidence": 0.75,
+    "latencyMs": 23
+  },
+  {
+    "trialId": "synthetic-validation-4",
+    "signerId": "synthetic-validation-a",
+    "split": "validation",
+    "expectedGloss": "DECIDE1",
+    "predictedGloss": "DECIDE1",
+    "confidence": 0.8,
+    "latencyMs": 24
+  }
+]

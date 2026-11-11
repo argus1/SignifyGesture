@@ -9,15 +9,16 @@ import { cn } from "@/lib/utils";
  * - In the browser (no native host) it paints a blurred café "sample scene" so the prototype reads as a live camera.
  * - In dev preview it adds a dashed frame (toggle in the Bridge Simulator).
  */
-export function CameraViewport({ className, children, label = "Camera" }: { className?: string; children?: ReactNode; label?: string }) {
+export function CameraViewport({ className, children, label = "Camera", enabled = true }: { className?: string; children?: ReactNode; label?: string; enabled?: boolean }) {
   const { devPreview, triggerCameraToggle } = useNativeBridge();
   const [native, setNative] = useState(true); // assume native until mounted, so SSR never paints over the real camera
   useEffect(() => setNative(isNativeHost()), []);
 
   useEffect(() => {
+    if (!enabled) return;
     triggerCameraToggle(true);
     return () => triggerCameraToggle(false);
-  }, [triggerCameraToggle]);
+  }, [enabled, triggerCameraToggle]);
 
   return (
     <div className={cn("native-viewport relative overflow-hidden bg-transparent", className)} aria-label={`${label} view`} role="img">
@@ -27,6 +28,23 @@ export function CameraViewport({ className, children, label = "Camera" }: { clas
       )}
       {children}
     </div>
+  );
+}
+
+export function CameraControl() {
+  const { cameraActive, triggerCameraToggle } = useNativeBridge();
+  const [native, setNative] = useState(false);
+  useEffect(() => setNative(isNativeHost()), []);
+  if (!native) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => triggerCameraToggle(!cameraActive)}
+      className="mx-auto my-2 rounded-full bg-background/90 px-4 py-2 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40"
+    >
+      {cameraActive ? "Stop camera" : "Start camera"}
+    </button>
   );
 }
 

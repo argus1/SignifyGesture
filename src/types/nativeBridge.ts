@@ -12,6 +12,7 @@ export type SignDetectedPayload = {
   confidence: number; // 0–1
   isFinal: boolean;
   timestamp: number; // ms since epoch
+  latencyMs?: number;
   /** Optional extension used by the repair agent: next-best guesses, highest first. */
   alternatives?: Alternative[];
 };
@@ -31,6 +32,16 @@ export type SpeechTranscribedPayload = {
 
 export type TrackingState = "idle" | "tracking" | "lost";
 
+export type RecognitionStatus =
+  "modelUnavailable" | "confidenceThresholdNotValidated" | "noResult" | "unsupportedGloss";
+
+/** Inbound: recognition readiness and explicit no-result reasons. */
+export type RecognitionStatusPayload = {
+  state: RecognitionStatus;
+  message?: string;
+  latencyMs?: number;
+};
+
 /** Inbound: camera / tracking / inference status for badges. */
 export type EngineStatusPayload = {
   cameraActive: boolean;
@@ -38,11 +49,18 @@ export type EngineStatusPayload = {
   inferenceLatencyMs: number;
 };
 
+export type NativeErrorPayload = {
+  feature: string;
+  message: string;
+};
+
 export interface NativeASLBridge {
   onSignDetected(payload: SignDetectedPayload): void;
   onSentenceTranslated(payload: SentenceTranslatedPayload): void;
   onEngineStatusChange(status: EngineStatusPayload): void;
+  onRecognitionStatusChange(status: RecognitionStatusPayload): void;
   onTTSPlaybackState(isPlaying: boolean): void;
+  onNativeError(error: NativeErrorPayload): void;
   /** Extension: what the hearing person said. Native should mute the mic while TTS is playing so the app doesn't caption itself. */
   onSpeechTranscribed(payload: SpeechTranscribedPayload): void;
 }

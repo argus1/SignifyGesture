@@ -10,6 +10,10 @@ configs:
   Debug: debug
   Release: release
 
+configFiles:
+  Debug: Config/Frontend.xcconfig
+  Release: Config/Frontend.xcconfig
+
 settings:
   base:
     SWIFT_VERSION: 5.0
@@ -17,10 +21,10 @@ settings:
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
     CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: S8CKN5R4P7
     TARGETED_DEVICE_FAMILY: "1,2"
     GENERATE_INFOPLIST_FILE: NO
     INFOPLIST_FILE: Config/Info.plist
-    SIGNIFY_FRONTEND_URL: "http://localhost:5173"
 
 schemes:
   SignifyGesture:
@@ -29,6 +33,9 @@ schemes:
         SignifyGesture: all
     run:
       config: Debug
+    test:
+      targets:
+        - SignifyGestureTests
 
 targets:
   SignifyGesture:
@@ -39,8 +46,21 @@ targets:
     settings:
       base:
         PRODUCT_NAME: SignifyGesture
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: SignifyGesture
         INFOPLIST_KEY_NSCameraUsageDescription: "Camera access enables on-device hand-pose tracking for the demo. Video is not saved or sent to the web UI."
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Local network access can load the team’s development UI from your computer."
         INFOPLIST_KEY_SIGNIFY_FRONTEND_URL: "$(SIGNIFY_FRONTEND_URL)"
         CODE_SIGN_STYLE: Automatic
+
+  SignifyGestureTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: SignifyGesture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture.tests
+        GENERATE_INFOPLIST_FILE: YES
