@@ -1,217 +1,281 @@
-import { useState, type ReactNode } from "react";
-import { Bot, Undo2, Check, Pause, Play, Keyboard, X as XIcon } from "lucide-react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
+import { motion } from "framer-motion";
+import { Bot, Keyboard, X as XIcon } from "lucide-react";
 import { Slider } from "@/components/ui/slider";
 import { useSignify, type AgentStep } from "@/lib/signify-store";
-import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { AgentIcon } from "./AgentIcon";
-
-const STEPS: { id: AgentStep; label: string; says: string }[] = [
-  { id: "translate", label: "Translate", says: "Turning your signs into English." },
-  { id: "check", label: "Check", says: "Double-checking a sign it isn’t sure about." },
-  { id: "repair", label: "Repair", says: "Waiting for you to pick the right word." },
-  { id: "recap", label: "Recap", says: "Summing up the conversation." },
-];
-
-/** Where the agent is right now: 4 steps, current one highlighted, with a plain sentence underneath. */
-export function Pipeline() {
-  const { step, paused } = useSignify();
-  const current = STEPS.find((s) => s.id === step) ?? STEPS[0]!;
-  return (
-    <div>
-      <ol className="grid grid-cols-4 rounded-full bg-muted p-1" aria-label="Agent steps">
-        {STEPS.map((s) => (
-          <li key={s.id} aria-current={step === s.id ? "step" : undefined}
-            className={cn("rounded-full py-2 text-center text-xs font-bold transition-colors", step === s.id ? "bg-background shadow-sm" : "text-muted-foreground")}>
-            {s.label}
-          </li>
-        ))}
-      </ol>
-      <p className="mt-2 px-1 text-sm text-muted-foreground">{paused ? "Paused. Your signs go straight through, unchecked." : current.says}</p>
-    </div>
-  );
-}
-
-function SectionLabel({ children }: { children: ReactNode }) {
-  return <p className="mb-2 px-1 text-sm font-bold">{children}</p>;
-}
+import {
+  GlassSheet,
+  HeaderIconButton,
+  RoundButton,
+  SheetItem,
+  press,
+  DUR,
+  EASE,
+  STAGGER,
+} from "./ui";
 
 /**
- * What the agent does, as one plain paragraph. The step it's on right now is highlighted in the sentence,
- * so the four steps (translate, check, repair, recap) read as a story instead of a row of tabs.
+ * Agent button (44px, Bot icon, mint status dot) on every conversation screen. Opens Agent settings.
+ * The dot pulses while the agent is asking about a sign and disappears when the agent is off.
  */
-function AgentStory() {
-  const { step, paused } = useSignify();
-  const steps: { id: AgentStep; verb: string; rest: string }[] = [
-    { id: "translate", verb: "Translates", rest: "your signs into English" },
-    { id: "check", verb: "Checks", rest: "signs it isn’t sure about" },
-    { id: "repair", verb: "Asks you", rest: "to fix them first" },
-    { id: "recap", verb: "Recaps", rest: "the conversation at the end" },
-  ];
-  // Same text on and off, so nothing shifts; when off, no step is highlighted
-  return (
-    <ol className="space-y-1.5">
-      {steps.map((x, i) => {
-        const now = !paused && step === x.id;
-        return (
-          <li key={x.id} aria-current={now ? "step" : undefined}
-            className={cn("flex items-center gap-3 rounded-full py-1 pl-1 pr-3 transition-colors", now && "bg-accent")}>
-            <span className={cn("grid h-6 w-6 shrink-0 place-items-center rounded-full text-xs font-bold transition-colors", now ? "bg-primary text-foreground" : "bg-muted text-muted-foreground")}>{i + 1}</span>
-            <span className="text-[15px] leading-snug text-muted-foreground">
-              <span className={cn("font-bold", now ? "text-mint-ink" : "text-foreground")}>{x.verb}</span> {x.rest}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
-  );
-}
-
-/** Agent button + a read-only “under the hood” sheet: what the agent does, what it just did, what it learned. Controls live on the conversation screen. */
-export function AgentChip({ className }: { className?: string }) {
+export function AgentButton({ className }: { className?: string }) {
   const a = useSignify();
-  const open = a.agentOpen, setOpen = a.setAgentOpen;
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className={cn("relative grid h-11 w-11 place-items-center rounded-full bg-background/85 backdrop-blur-md active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40", className)}
-        aria-label={`Signify Agent: ${a.paused ? "paused" : a.step}. See what it’s doing`}
-      >
-        <AgentIcon mood={a.paused ? "off" : a.step === "repair" ? "thinking" : "idle"} />
-        {/* Brand mint only: steady when on, pulsing while it asks you about a sign, no dot when the agent is off */}
-        {!a.paused && (
-          <span aria-hidden className={cn("absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-primary ring-2 ring-white", a.step === "repair" && "animate-pulse")} />
-        )}
-      </button>
-      <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent inPhone hideClose side="bottom" className="max-h-[90%] overflow-y-auto rounded-t-[2rem]">
-          <SheetHeader className="text-left">
-            <div className="flex items-start gap-3">
-              <SheetTitle className="flex-1 pt-2 text-2xl font-black">Signify Agent</SheetTitle>
-              {/* On/off: the agent itself. Tap to turn off and a line strikes through it. */}
-              <button onClick={() => a.setPaused(!a.paused)} aria-pressed={!a.paused} aria-label={a.paused ? "Agent is off. Turn on" : "Agent is on. Turn off"}
-                className={cn("flex h-14 w-14 shrink-0 flex-col items-center justify-center gap-0.5 rounded-full bg-muted transition-colors active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40",
-                  a.paused ? "text-muted-foreground" : "text-foreground")}>
-                {/* One bubble: the agent on top, On/Off directly underneath */}
-                <span className="relative grid h-5 w-5 place-items-center">
-                  <AgentIcon mood={a.paused ? "off" : "idle"} />
-                  {a.paused && (
-                    <svg viewBox="0 0 24 24" className="pointer-events-none absolute inset-0" aria-hidden>
-                      <line x1="3" y1="3" x2="21" y2="21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" className="agent-strike" />
-                    </svg>
-                  )}
-                </span>
-                <span className="text-[11px] font-bold leading-none">{a.paused ? "Off" : "On"}</span>
-              </button>
-            </div>
-            <SheetDescription asChild><div className="pb-2 pt-2"><AgentStory /></div></SheetDescription>
-          </SheetHeader>
-          <div className="space-y-5 pt-3">
-
-            {/* What the agent just did, and why */}
-            <section>
-              <SectionLabel>Last thing it did</SectionLabel>
-              <div className="rounded-3xl bg-muted p-4">
-                {a.lastAction ? (
-                  <>
-                    <p className="text-base font-bold">{a.lastAction.text}</p>
-                    <p className="text-sm text-muted-foreground">Why: {a.lastAction.reason}</p>
-                  </>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Waiting for your first sign.</p>
-                )}
-              </div>
-            </section>
-
-            <section>
-              <div className="flex items-baseline justify-between px-1">
-                <label id="thr" className="text-sm font-bold">When should it ask you?</label>
-                <span className="text-sm font-bold">{Math.round(a.threshold * 100)}%</span>
-              </div>
-              <Slider aria-labelledby="thr" className="mt-3" min={0.4} max={0.95} step={0.05} value={[a.threshold]} onValueChange={([v]) => a.setThreshold(v ?? a.threshold)} />
-              <p className="mt-2 px-1 text-sm text-muted-foreground">It asks “which sign did you mean?” when it’s less than {Math.round(a.threshold * 100)}% sure.</p>
-            </section>
-
-            <section>
-              <SectionLabel>Caption text size</SectionLabel>
-              <div className="flex items-center gap-3 rounded-full bg-muted px-4 py-3">
-                <span aria-hidden className="text-xs font-bold">A</span>
-                <Slider aria-label="Caption text size" className="flex-1" min={0.85} max={1.5} step={0.05} value={[a.textScale]} onValueChange={([v]) => a.setTextScale(v ?? a.textScale)} />
-                <span aria-hidden className="text-xl font-bold">A</span>
-              </div>
-            </section>
-
-            <section>
-              <SectionLabel>Signs it has learned</SectionLabel>
-              {a.corrections.length === 0 ? (
-                <p className="px-1 text-sm text-muted-foreground">Fix a sign and it shows up here.</p>
-              ) : (
-                <ul className="flex flex-wrap gap-2">
-                  {a.corrections.map((c) => (
-                    <li key={c.heard} className="rounded-full bg-muted px-4 py-2 text-sm">
-                      <span className="line-through opacity-60">{c.heard.toLowerCase()}</span> → <b>{c.meant.toLowerCase()}</b>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </div>
-        </SheetContent>
-      </Sheet>
+      <RoundButton
+        icon={Bot}
+        label={`Signify Agent: ${a.paused ? "off" : a.step}. Open agent settings`}
+        onClick={() => a.setAgentOpen(true)}
+        dot={!a.paused}
+        pulse={a.step === "repair"}
+        {...(className ? { className } : {})}
+      />
+      <AgentSettings />
     </>
   );
 }
+/** Old name, same component. */
+export const AgentChip = AgentButton;
 
-/** The agent asks by offering the likely words directly — one tap picks the right one. */
-export function RepairCard({ onType }: { onType?: () => void }) {
-  const { pending, resolveRepair, dismissTyping } = useSignify();
-  // None of the guesses are right: open the keyboard straight away
-  const typeInstead = () => { resolveRepair(null); if (onType) { dismissTyping(); onType(); } };
-  if (!pending) return null;
-  const options = [{ gloss: pending.gloss, confidence: pending.confidence }, ...(pending.alternatives ?? [])].slice(0, 2); // best guess + runner-up; "Type the right word" covers the rest
+const STEPS: { id: AgentStep; lead: string; rest: string }[] = [
+  { id: "translate", lead: "Translates", rest: "your signs into English" },
+  { id: "check", lead: "Checks", rest: "signs it isn’t sure about" },
+  { id: "repair", lead: "Asks you", rest: "to fix them first" },
+  { id: "recap", lead: "Recaps", rest: "the conversation at the end" },
+];
+
+/** 09 Agent settings: on/off chip, what it does, last action, the ask threshold, caption size, learned signs. */
+function AgentSettings() {
+  const a = useSignify();
+  const pct = Math.round(a.threshold * 100);
   return (
-    <div role="alertdialog" aria-label="Signify Agent needs to confirm a sign" className="rounded-3xl bg-accent p-4">
-      <p className="flex items-center gap-1.5 text-sm font-semibold"><AgentIcon mood="thinking" className="h-4 w-4" /> Which sign did you mean?</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {options.map((o, i) => (
-          <button key={o.gloss} onClick={() => resolveRepair(o.gloss)}
-            className={cn("flex min-h-12 items-center justify-center gap-2 rounded-full px-4 text-lg font-bold leading-none focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40",
-              i === 0 ? "bg-primary" : "bg-background")}>
-            {o.gloss.toLowerCase()}
-            <span className="text-xs font-medium opacity-60">{Math.round(o.confidence * 100)}%</span>
-          </button>
-        ))}
+    <GlassSheet
+      open={a.agentOpen}
+      onClose={() => a.setAgentOpen(false)}
+      label="Signify Agent settings"
+      className="glass-sheet-agent"
+    >
+      <div className="px-[34px] pb-10 pt-2">
+        <SheetItem className="-ml-[10px] flex items-center justify-between">
+          <motion.button
+            {...press}
+            onClick={() => a.setPaused(!a.paused)}
+            aria-pressed={!a.paused}
+            aria-label={a.paused ? "Agent is off. Turn on" : "Agent is on. Turn off"}
+            className="t-btn flex h-9 items-center gap-2 rounded-full border-[0.5px] border-foreground bg-card pl-4 pr-3.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          >
+            <span
+              aria-hidden
+              className={cn(
+                "h-2 w-2 rounded-full transition-colors",
+                a.paused ? "bg-chevron" : "bg-primary",
+              )}
+            />
+            {a.paused ? "Agent off" : "Agent on"}
+            <Bot className="h-[15px] w-[15px]" aria-hidden />
+          </motion.button>
+          <HeaderIconButton
+            icon={XIcon}
+            label="Close agent settings"
+            onClick={() => a.setAgentOpen(false)}
+          />
+        </SheetItem>
+
+        <SheetItem>
+          <p className="t-label mt-[21px]">What it does</p>
+          <ol className="mt-[13px] space-y-[9px]">
+            {STEPS.map((x) => {
+              const now = !a.paused && a.step === x.id;
+              return (
+                <li
+                  key={x.id}
+                  aria-current={now ? "step" : undefined}
+                  className="relative text-[11px] leading-[14px]"
+                >
+                  {now && (
+                    <span
+                      aria-hidden
+                      className="dot-pulse absolute -left-3 top-[5px] h-1.5 w-1.5 rounded-full bg-primary"
+                    />
+                  )}
+                  <span className="font-semibold">{x.lead}</span>{" "}
+                  <span className="font-light">{x.rest}</span>
+                </li>
+              );
+            })}
+          </ol>
+        </SheetItem>
+
+        {a.lastAction && (
+          <SheetItem>
+            <p className="t-label mt-[26px] text-ink-3">Last thing it did</p>
+            <p className="mt-2 text-[13px] font-medium">{a.lastAction.text}</p>
+            <p className="text-[13px] text-ink-2">Why: {a.lastAction.reason}</p>
+          </SheetItem>
+        )}
+
+        <SheetItem>
+          <div className="mt-[30px] flex items-baseline justify-between">
+            <label id="thr" className="t-label">
+              Ask me when it’s under
+            </label>
+            <span className="t-pill">{pct}%</span>
+          </div>
+          <Slider
+            aria-labelledby="thr"
+            className="mt-1"
+            min={0.4}
+            max={0.95}
+            step={0.05}
+            value={[a.threshold]}
+            onValueChange={([v]) => a.setThreshold(v ?? a.threshold)}
+          />
+          <p className="mt-1 text-[13px] leading-4 text-ink-2">
+            Asks “which sign did you mean?” when it’s less than {pct}% sure.
+          </p>
+        </SheetItem>
+
+        <SheetItem>
+          <p id="cap" className="t-label mt-[38px] text-ink-3">
+            Caption size
+          </p>
+          <div className="mt-1 flex items-center gap-[9px]">
+            <span aria-hidden className="text-[12px]">
+              A
+            </span>
+            <Slider
+              aria-labelledby="cap"
+              className="flex-1"
+              min={0.85}
+              max={1.5}
+              step={0.05}
+              value={[a.textScale]}
+              onValueChange={([v]) => a.setTextScale(v ?? a.textScale)}
+            />
+            <span aria-hidden className="text-[22px] leading-none">
+              A
+            </span>
+          </div>
+        </SheetItem>
+
+        <SheetItem>
+          <p className="t-label mt-[26px] text-ink-3">Signs it has learned</p>
+          {a.corrections.length === 0 ? (
+            <p className="mt-2 text-[13px] text-ink-2">Fix a sign and it shows up here.</p>
+          ) : (
+            <ul className="mt-[10px] flex flex-wrap gap-2">
+              {a.corrections.map((c) => (
+                <li
+                  key={c.heard}
+                  className="flex h-9 items-center gap-1.5 rounded-full border-[0.5px] border-line-strong bg-surface px-4 text-[14px] font-medium"
+                >
+                  <span className="text-ink-3 line-through">{c.heard.toLowerCase()}</span>
+                  <span aria-hidden>→</span>
+                  <span className="sr-only">became</span>
+                  {c.meant.toLowerCase()}
+                </li>
+              ))}
+            </ul>
+          )}
+        </SheetItem>
       </div>
-      <div className="mt-3">
-        <button onClick={typeInstead}
-          className="flex min-h-10 items-center gap-1.5 whitespace-nowrap rounded-full bg-background/60 px-3.5 text-sm font-semibold active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40">
-          <Keyboard className="h-4 w-4" aria-hidden /> Type the right word
-        </button>
-      </div>
-    </div>
+    </GlassSheet>
   );
 }
 
+/**
+ * 06 Agent check card: "Which sign did you mean?" with the top 2 guesses and a way out.
+ * Rises 16px and fades in, chips stagger in, the top guess pulses mint once.
+ */
+export function RepairCard({ onType }: { onType?: () => void }) {
+  const { pending, resolveRepair, dismissTyping } = useSignify();
+  const typeInstead = () => {
+    resolveRepair(null);
+    if (onType) {
+      dismissTyping();
+      onType();
+    }
+  };
+  if (!pending) return null;
+  const options = [
+    { gloss: pending.gloss, confidence: pending.confidence },
+    ...(pending.alternatives ?? []),
+  ].slice(0, 2);
+  return (
+    <motion.div
+      role="alertdialog"
+      aria-label="Signify Agent needs to confirm a sign"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: DUR.base, ease: EASE }}
+      className="rounded-[30px] border-[0.5px] border-line-strong bg-surface px-[33px] pb-[11px] pt-[13px]"
+    >
+      <p className="flex items-center gap-1.5 font-label text-[11px] font-semibold">
+        <Bot className="h-[11px] w-[11px]" aria-hidden /> Which sign did you mean?
+      </p>
+      <motion.div
+        className="mt-[9px] flex flex-wrap gap-[6px]"
+        initial="hidden"
+        animate="show"
+        variants={{
+          hidden: {},
+          show: { transition: { staggerChildren: STAGGER, delayChildren: 0.1 } },
+        }}
+      >
+        {options.map((o, i) => (
+          <motion.button
+            key={o.gloss}
+            onClick={() => resolveRepair(o.gloss)}
+            variants={{ hidden: { opacity: 0, y: 6 }, show: { opacity: 1, y: 0 } }}
+            whileTap={{ scale: 0.96 }}
+            className={cn(
+              "flex h-[37px] items-center gap-1.5 rounded-full bg-card px-[13px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+              i === 0 && "mint-glow-once border-[1.5px] border-primary",
+            )}
+          >
+            <span className="text-[14px] font-medium">{o.gloss.toLowerCase()}</span>
+            <span className="text-[11px] text-ink-3">{Math.round(o.confidence * 100)}%</span>
+          </motion.button>
+        ))}
+      </motion.div>
+      <motion.button
+        {...press}
+        onClick={typeInstead}
+        className="mt-[11px] flex h-[31px] items-center gap-2 rounded-full bg-white/60 px-3 font-label text-[11px] dark:border-[0.5px] dark:border-white dark:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <Keyboard className="h-[13px] w-[13px]" aria-hidden /> Type the right word
+      </motion.button>
+    </motion.div>
+  );
+}
+
+/** After 3 unsure signs in a row: offer typing. */
 export function TypingSuggestion({ onType }: { onType: () => void }) {
   const { suggestTyping, dismissTyping } = useSignify();
   if (!suggestTyping) return null;
   return (
-    <div role="status" className="flex items-center gap-3 rounded-3xl bg-muted p-3 pl-4">
-      <p className="flex-1 text-sm font-semibold">Tricky signs today. Type instead?</p>
-      <button onClick={() => { dismissTyping(); onType(); }} aria-label="Type instead" className="grid h-11 w-11 place-items-center rounded-full bg-primary"><Keyboard className="h-5 w-5" /></button>
-      <button onClick={dismissTyping} aria-label="Keep signing" className="grid h-11 w-11 place-items-center rounded-full bg-background"><XIcon className="h-5 w-5" /></button>
+    <div
+      role="status"
+      className="flex items-center gap-3 rounded-[30px] border-[0.5px] border-line-strong bg-surface py-2 pl-5 pr-2"
+    >
+      <p className="flex-1 text-[13px] font-medium">Tricky signs today. Type instead?</p>
+      <RoundButton
+        icon={Keyboard}
+        label="Type instead"
+        onClick={() => {
+          dismissTyping();
+          onType();
+        }}
+        size={18}
+        className="bg-primary text-black"
+      />
+      <RoundButton
+        icon={XIcon}
+        label="Keep signing"
+        onClick={dismissTyping}
+        size={14}
+        className="bg-card"
+      />
     </div>
-  );
-}
-
-/** Drag-handle style toggle for the transcript sheet. */
-export function ExpandToggle({ open, onToggle }: { open: boolean; onToggle: () => void }) {
-  return (
-    <button onClick={onToggle} aria-label={open ? "Collapse transcript" : "Expand full transcript"} aria-expanded={open}
-      className="mx-auto flex h-8 w-full items-center justify-center focus-visible:outline-none">
-      <span className="h-1.5 w-12 rounded-full bg-secondary" />
-    </button>
   );
 }

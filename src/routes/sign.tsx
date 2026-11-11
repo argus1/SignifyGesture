@@ -1,28 +1,46 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
-  ChevronLeft,
-  Volume2,
-  VolumeX,
-  Keyboard,
-  ArrowUp,
-  Check,
-  Undo2,
+  X,
   Hand,
   AudioLines,
-  type LucideIcon,
+  ArrowLeftRight,
+  Keyboard,
+  ArrowUp,
+  Volume2,
+  VolumeX,
+  Mic,
+  Bot,
+  Check,
+  Undo2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { useNativeBridge, useSignify, type Caption } from "@/lib/signify-store";
-import { isNativeHost, triggerTTSPlayback } from "@/lib/nativeBridge";
+import { isNativeHost } from "@/lib/nativeBridge";
 import type { RecognitionStatusPayload } from "@/types/nativeBridge";
 import { CameraControl, CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
-import { AgentChip, RepairCard, TypingSuggestion } from "@/components/signify/agent";
-import { toast } from "sonner";
+import { AgentButton, RepairCard, TypingSuggestion } from "@/components/signify/agent";
+import {
+  Header,
+  HeaderIconButton,
+  PrimaryButton,
+  RoundButton,
+  AutoHeight,
+  press,
+  DUR,
+  EASE,
+  SPRING_PILL,
+} from "@/components/signify/ui";
 import { cn } from "@/lib/utils";
 import { seo } from "@/lib/seo";
 
-/** One conversation screen, two modes: "sign" (camera, Sam signs) and "speech" (white, the other person talks, Sam reads). */
+/**
+ * One conversation screen, two modes (spec 05–08):
+ * - sign: Live · Signing, camera behind everything, captions in a glass sheet (grows for Agent check)
+ * - speech: Speech · Start (waveform + Start speaking), then Speech · Conversation (captions panel, listening…)
+ */
 export type ConversationMode = "sign" | "speech";
 export const Route = createFileRoute("/sign")({
   validateSearch: (search: Record<string, unknown>): { mode?: ConversationMode } =>
@@ -32,221 +50,23 @@ export const Route = createFileRoute("/sign")({
   component: Conversation,
 });
 
-/**
- * One line of the conversation, Google Translate style: your words on the right (mint), theirs on the left (gray).
- * The small icon says how it came in: hand = signed, keyboard = typed, sound = heard by the mic (bars move while they're still talking).
- * Like Google showing the original above the translation, your latest signed line shows the signs it came from
- * ("HELLO I WANT ICED…") above the English. Tap an older line to see its signs again.
- * Your lines get a replay button so the other person can hear them again.
- */
-function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
-  const mine = c.speaker === "sam";
-  const { textScale } = useSignify();
-  const [open, setOpen] = useState(false);
-  const showGloss = !!c.gloss && (latest || open);
-  const SourceIcon = c.typed ? Keyboard : Hand;
-  const icon = mine ? (
-    <SourceIcon className="h-4 w-4" />
-  ) : c.final ? (
-    <AudioLines className="h-4 w-4" />
-  ) : (
-    <LiveBars />
-  );
-  return (
-    <div className={cn("flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
-      {mine && c.final && (
-        <button
-          onClick={() => triggerTTSPlayback(c.text)}
-          aria-label={`Say “${c.text}” again`}
-          className="mb-1 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted active:scale-95 transition-transform"
-        >
-          <Volume2 className="h-4 w-4" />
-        </button>
-      )}
-      <div
-        onClick={c.gloss && !latest ? () => setOpen(!open) : undefined}
-        className={cn(
-          "max-w-[85%] rounded-[1.5rem] px-4 py-2.5",
-          mine ? "bg-accent" : "bg-muted",
-          c.gloss && !latest && "cursor-pointer",
-        )}
-      >
-        <span className="sr-only">
-          {mine ? (c.typed ? "You typed:" : "You signed:") : "They said:"}
-        </span>
-        {showGloss && (
-          <p className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-muted-foreground">
-            <span aria-hidden>{icon}</span>
-            <span className="sr-only">Signs:</span>
-            {c.gloss}
-          </p>
-        )}
-        <p
-          style={{ fontSize: `${1.25 * textScale}rem` }}
-          className={cn(
-            "font-semibold leading-snug",
-            mine ? "text-mint-ink" : "text-foreground",
-            !c.final && "opacity-70",
-          )}
-        >
-          {!showGloss && (
-            <span
-              aria-hidden
-              className="mr-1.5 inline-flex h-4 translate-y-[1px] items-center align-baseline text-muted-foreground"
-            >
-              {icon}
-            </span>
-          )}
-          {c.text}
-        </p>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Google Translate-style listening light: a hairline of light that casts a soft glow downward,
- * with the status underneath, sitting just above the controls. A shimmer runs along the line;
- * faster while someone is signing or talking, dim while it waits on you.
- */
-function ListeningLight({
-  status,
-  busy,
-  waiting,
-  light = false,
-}: {
-  status: string;
-  busy: boolean;
-  waiting: boolean;
-  light?: boolean;
-}) {
-  return (
-    <div
-      role="status"
-      className={cn(
-        "listen-light mb-2 flex flex-col items-center",
-        busy && "listen-busy",
-        waiting && "listen-waiting",
-      )}
-    >
-      <div aria-hidden className="relative h-7 w-full">
-        <span className="listen-cone absolute left-1/2 top-0 h-7 w-full -translate-x-1/2" />
-        <span className="listen-line absolute left-1/2 top-0 h-px w-full -translate-x-1/2" />
-      </div>
-      <span
-        className={cn(
-          "-mt-3 text-sm font-semibold",
-          light ? "text-muted-foreground" : "text-white/90",
-        )}
-      >
-        {status}
-        {busy || waiting ? "…" : ""}
-      </span>
-    </div>
-  );
-}
-
-function recognitionStatusText(state: RecognitionStatusPayload) {
-  switch (state.state) {
-    case "modelUnavailable":
-      return `Tracking only — sign recognition is unavailable. ${state.message ?? ""}`.trim();
-    case "confidenceThresholdNotValidated":
-      return `Recognition is disabled until its confidence threshold is validated. ${state.message ?? ""}`.trim();
-    case "noResult":
-      return `No result. ${state.message ?? "Try the sign again."}`.trim();
-    case "unsupportedGloss":
-      return "No result. This sign is outside the supported demo vocabulary.";
-  }
-}
-
-/** Tiny moving sound bars: the mic is hearing them right now. */
-function LiveBars() {
-  return (
-    <span className="flex h-4 items-center gap-[2px]">
-      {[8, 14, 10].map((h, i) => (
-        <span
-          key={i}
-          className="voice-bar w-[3px] rounded-full bg-current"
-          style={{ height: h, animationDelay: `${i * 120}ms` }}
-        />
-      ))}
-    </span>
-  );
-}
-
-/** Round glass button that floats on the camera, same look as the home direction pills. */
-function GlassButton({
-  icon: Icon,
-  label,
-  onClick,
-  light = false,
-}: {
-  icon: LucideIcon;
-  label: string;
-  onClick: () => void;
-  light?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      aria-label={label}
-      className={cn(
-        "grid h-11 w-11 place-items-center rounded-full backdrop-blur-md active:scale-95 transition-transform focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40",
-        light ? "bg-muted" : "bg-background/85",
-      )}
-    >
-      <Icon className="h-5 w-5" />
-    </button>
-  );
-}
-
-/** One control in the dark glass bar — same shape and states as the home tab bar. */
-function BarToggle({
-  icon: Icon,
-  label,
-  on,
-  onClick,
-  light = false,
-}: {
-  icon: LucideIcon;
-  label: string;
-  on: boolean;
-  onClick: () => void;
-  light?: boolean;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={on}
-      className={cn(
-        "flex h-14 flex-col items-center justify-center gap-0.5 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40",
-        light
-          ? on
-            ? "bg-black/[0.07]"
-            : "text-muted-foreground active:bg-black/5"
-          : on
-            ? "bg-white/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.15)]"
-            : "text-white/60 active:bg-white/10",
-      )}
-    >
-      <Icon className="h-5 w-5" aria-hidden />
-      <span className="text-[11px] font-semibold leading-none">{label}</span>
-    </button>
-  );
-}
-
-/**
- * Conversation, laid out like home: camera fills the screen, controls float on top.
- * Top: close · status · agent. Bottom: one caption card + a dark glass control bar.
- */
 function Conversation() {
   const { mode = "sign" } = Route.useSearch();
   const speech = mode === "speech";
   const s = useSignify();
-  const engine = useNativeBridge();
   const nav = useNavigate();
-  const scroller = useRef<HTMLDivElement>(null);
-  // Keep the hand on screen (performing the sign) while signs are coming in; fade it ~1.6s after the last one
+  const reduce = useReducedMotion();
+  const native = useIsNative();
+
+  const [started, setStarted] = useState(false); // Speech · Start → Speech · Conversation
+  const [typing, setTyping] = useState(false);
+  const showComposer = typing || s.awaitingTyped;
+  const empty = s.captions.length === 0;
+  const speechLive = speech && (started || !empty);
+  const last = s.captions[s.captions.length - 1];
+  const hearing = last?.speaker === "other" && !last.final; // the mic is picking up the other person right now
+
+  // Keep the hand on screen while signs come in; fade it ~1.6s after the last one
   const [signingNow, setSigningNow] = useState(false);
   useEffect(() => {
     if (!s.liveSign) {
@@ -257,20 +77,10 @@ function Conversation() {
     const t = setTimeout(() => setSigningNow(false), 1600);
     return () => clearTimeout(t);
   }, [s.liveSign]);
-  const [typing, setTyping] = useState(false);
-  const [draft, setDraft] = useState("");
-  // Whole conversation lives in the card; it scrolls and always jumps to the newest line
+
+  // In the browser, the other person "talks" a moment after Start speaking (natively the mic does this)
   useEffect(() => {
-    const el = scroller.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [s.captions]);
-  const empty = s.captions.length === 0;
-  const latestSigned = [...s.captions].reverse().find((c) => c.speaker === "sam" && c.gloss)?.id;
-  const last = s.captions[s.captions.length - 1];
-  const hearing = last?.speaker === "other" && !last.final; // mic is picking up the other person right now
-  // Speech mode in the browser: the other person "talks" a moment after you arrive (natively the mic does this)
-  useEffect(() => {
-    if (!speech || s.captions.length > 0 || isNativeHost()) return;
+    if (!speech || !started || s.captions.length > 0 || native) return;
     let cancelled = false;
     const words = "Hi! What can I get started for you?".split(" ");
     const timers = words.map((_, i) =>
@@ -282,71 +92,88 @@ function Conversation() {
               isFinal: i === words.length - 1,
             });
         },
-        1200 + i * 320,
+        900 + i * 320,
       ),
     );
     return () => {
       cancelled = true;
       timers.forEach(clearTimeout);
     };
-  }, [speech]); // eslint-disable-line react-hooks/exhaustive-deps
-  const recognitionStatus = s.recognitionStatus ? recognitionStatusText(s.recognitionStatus) : null;
-  const status = speech
-    ? hearing
-      ? "They're talking"
-      : engine.ttsPlaying
-        ? "Speaking for you"
-        : "Listening"
-    : isNativeHost() && !engine.cameraActive
-      ? "Camera off"
-      : (recognitionStatus ??
-        (hearing
-          ? "They're talking"
-          : engine.tracking === "lost"
-            ? "Show your hands"
-            : s.pending
-              ? "Checking a sign"
-              : engine.ttsPlaying
-                ? "Speaking for you"
-                : engine.tracking === "tracking"
-                  ? "Signing"
-                  : "Listening"));
+  }, [speech, started]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const exit = () => nav({ to: "/memory", search: { fresh: true } }); // ✕ always goes to Memory: the agent saved it
+  const switchMode = (to: ConversationMode) => {
+    if (to === mode) return;
+    s.cancelTyped();
+    setTyping(false);
+    nav({ to: "/sign", search: to === "speech" ? { mode: "speech" } : {} });
+  };
+  const toggleType = () => {
+    if (showComposer) {
+      s.cancelTyped();
+      setTyping(false);
+    } else setTyping(true);
+  };
 
   return (
-    <div className="relative flex flex-1 flex-col">
-      {/* Full-screen camera with the same scrims as home (speech mode: plain white, like home's Speech side) */}
-      {speech && <div aria-hidden className="absolute inset-0 bg-background" />}
-      <div className={cn("absolute inset-0", speech && "hidden")}>
+    <div className="relative flex flex-1 flex-col overflow-hidden">
+      {/* Background: camera (sign) cross-fades with white / black (speech) over dur.slow */}
+      <motion.div
+        aria-hidden={speech}
+        className="absolute inset-0"
+        animate={{ opacity: speech ? 0 : 1 }}
+        transition={{ duration: DUR.slow, ease: EASE }}
+        initial={false}
+      >
         <CameraViewport className="absolute inset-0" label="Native camera" enabled={!speech} />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-gradient-to-b from-black/45 to-transparent"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[224px] bg-gradient-to-b from-black/45 to-transparent"
         />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-72 bg-gradient-to-t from-black/50 to-transparent"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/50 to-transparent"
         />
-      </div>
-      <div
+      </motion.div>
+      <motion.div
         aria-hidden
-        className={cn("absolute inset-0 -z-10", speech ? "bg-background" : "bg-neutral-900 native-camera-backdrop")}
+        className="absolute inset-0 bg-background"
+        animate={{ opacity: speech ? 1 : 0 }}
+        initial={false}
+        transition={{ duration: DUR.slow, ease: EASE }}
       />
 
       <div className="relative z-10 flex flex-1 flex-col">
-        {/* Top row mirrors home's header: left · center · right */}
-        <header className="grid grid-cols-[44px_1fr_44px] items-start px-4 pt-4 pb-2">
-          <GlassButton
-            light={speech}
-            icon={ChevronLeft}
-            label={empty ? "Back" : "End conversation and see recap"}
-            onClick={() => nav({ to: empty ? "/home" : "/recap" })}
-          />
-          <span />
-          {/* Right column: agent, and under it the voice on/off (a setting, not a mode) */}
-          <div className="flex flex-col items-center gap-2">
-            <AgentChip {...(speech ? { className: "bg-muted" } : {})} />
-            <GlassButton
-              light={speech}
+        <Header
+          onCamera={!speech}
+          left={
+            !speech ? (
+              <span className="t-label flex items-center gap-1.5 tracking-[0.1em] text-black dark:text-white">
+                <span aria-hidden className="dot-pulse h-2 w-2 rounded-full bg-primary" /> Live
+              </span>
+            ) : undefined
+          }
+          right={
+            <HeaderIconButton
+              icon={X}
+              label="End conversation. It's saved to Memory"
+              onClick={exit}
+              onCamera={!speech}
+            />
+          }
+        />
+        <ModeToggle mode={mode} onCamera={!speech} onChange={switchMode} />
+        {!speech && (
+          <div className="relative z-20 mt-[78px]">
+            <CameraControl />
+          </div>
+        )}
+
+        {/* Right-hand column: agent · sound · type (positions from the spec) */}
+        <div className="absolute right-5 top-[160px] z-20 flex flex-col gap-2">
+          {(!speech || speechLive) && <AgentButton />}
+          {speechLive && (
+            <RoundButton
               icon={s.readAloud ? Volume2 : VolumeX}
               label={
                 s.readAloud
@@ -362,186 +189,573 @@ function Conversation() {
                 );
               }}
             />
-          </div>
-        </header>
-        {!speech && <CameraControl />}
-
-        {/* Center: hand cue (sign mode) or voice bars (speech mode), same as the home screen */}
-        <div className="relative flex flex-1 items-center justify-center">
-          {speech ? (
-            <div
-              aria-hidden
-              className={cn(
-                "flex h-24 items-center justify-center gap-1.5 transition-opacity duration-500",
-                hearing || empty ? "opacity-100" : "opacity-40",
-              )}
-            >
-              {[18, 34, 24, 50, 30, 64, 40, 56, 28, 46, 22, 38, 16].map((hgt, i) => (
-                <span
-                  key={i}
-                  className={cn("w-2 rounded-full bg-primary", hearing && "voice-bar")}
-                  style={{
-                    height: hearing ? hgt : Math.max(8, hgt / 4),
-                    animationDelay: `${i * 90}ms`,
-                    transition: "height 300ms ease",
-                  }}
-                />
-              ))}
-            </div>
-          ) : (
-            <div
-              className={cn(
-                "transition-all duration-500",
-                empty || signingNow ? "scale-100 opacity-100" : "scale-90 opacity-0",
-              )}
-            >
-              <HandTrackingCue
-                gloss={signingNow ? s.liveSign?.gloss : null}
-                signKey={s.liveSign?.at}
-              />
-            </div>
           )}
+          <RoundButton
+            icon={Keyboard}
+            size={20}
+            label={showComposer ? "Close the keyboard" : "Type a message instead"}
+            pressed={showComposer}
+            onClick={toggleType}
+          />
         </div>
 
-        {/* Caption card: hidden until something is said, then slides up */}
-        {(!empty || typing || s.pending || s.suggestTyping) && (
-          <section
-            aria-label="Live captions"
-            className={cn(
-              "mx-4 mb-3 rounded-[2rem] bg-background transition-[border-color,box-shadow] duration-300 animate-in fade-in slide-in-from-bottom-4",
-              speech
-                ? "border border-foreground/10 shadow-[0_8px_30px_rgba(0,0,0,0.08)]"
-                : "border border-transparent shadow-[0_8px_30px_rgba(0,0,0,0.18)]",
-              empty ? "p-3" : "px-4 py-4",
-            )}
-          >
-            <div
-              ref={scroller}
-              aria-live="polite"
-              className="max-h-56 space-y-3 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_20px)] pt-2"
-            >
-              {s.captions.map((c) => (
-                <Bubble key={c.id} c={c} latest={c.id === latestSigned} />
-              ))}
-            </div>
-
-            {/* Inline undo right after the agent fixes a word */}
-            {s.lastFix && !s.pending && (
-              <div className="mt-3 flex items-center gap-2 rounded-full bg-muted py-1.5 pl-4 pr-1.5">
-                <Check className="h-4 w-4 shrink-0 text-mint-ink" aria-hidden />
-                <p className="min-w-0 flex-1 truncate text-sm font-semibold">
-                  Fixed to “{s.lastFix}”
-                </p>
-                <button
-                  onClick={s.undo}
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full bg-background px-3 text-sm font-bold active:scale-95"
-                >
-                  <Undo2 className="h-4 w-4" /> Undo
-                </button>
-              </div>
-            )}
-
-            {(s.pending || s.suggestTyping || typing) && (
-              <div className={cn("space-y-3", !empty && "mt-3")}>
-                <RepairCard onType={() => setTyping(true)} />
-                <TypingSuggestion onType={() => setTyping(true)} />
-                {typing && (
-                  <form
-                    className="flex gap-2"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (draft.trim()) {
-                        if (s.awaitingTyped) s.fixTyped(draft);
-                        else s.say(draft.trim(), "sam", { typed: true });
-                        setDraft("");
-                        setTyping(false);
-                      }
-                    }}
-                  >
-                    <label htmlFor="typed" className="sr-only">
-                      Type your message
-                    </label>
-                    <input
-                      id="typed"
-                      autoFocus
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      placeholder={s.awaitingTyped ? "Type the right word…" : "Type your message…"}
-                      className="h-12 min-w-0 flex-1 rounded-full border border-foreground/15 bg-background px-5 text-lg outline-none transition-colors placeholder:text-muted-foreground focus:border-foreground/30"
-                    />
-                    <button
-                      type="submit"
-                      aria-label="Send"
-                      className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary active:scale-95"
-                    >
-                      <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
-                    </button>
-                  </form>
-                )}
-              </div>
-            )}
-          </section>
-        )}
-
-        {/* Hidden while typing: hands are on the keyboard, not signing */}
-        {!typing && (
-          <ListeningLight
-            light={speech}
-            status={status}
-            busy={hearing || signingNow || engine.ttsPlaying}
-            waiting={!speech && (!!s.pending || engine.tracking === "lost")}
+        {speech ? (
+          <SpeechMode
+            live={speechLive}
+            hearing={hearing}
+            composer={showComposer ? <Composer onDone={() => setTyping(false)} /> : null}
+            onStart={() => setStarted(true)}
+          />
+        ) : (
+          <SignMode
+            signingNow={signingNow}
+            empty={empty}
+            reduce={!!reduce}
+            composer={showComposer ? <Composer onDone={() => setTyping(false)} /> : null}
+            onType={() => setTyping(true)}
           />
         )}
-
-        {/* Dark glass control bar, same as the home tab bar */}
-        {/* Glass control bar: dark over the camera, light on white (same as the home tab bar) */}
-        <nav
-          aria-label="Conversation controls"
-          className={cn(
-            "mx-4 mb-4 grid grid-cols-3 rounded-full border p-1.5 backdrop-blur-xl backdrop-saturate-150",
-            speech
-              ? "border-black/5 bg-white/85 text-foreground shadow-[0_8px_30px_rgba(0,0,0,0.12),0_1px_3px_rgba(0,0,0,0.06)]"
-              : "border-white/15 bg-neutral-900/80 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12),0_10px_30px_rgba(0,0,0,0.25)]",
-          )}
-        >
-          {/* Same bar in both modes: the mode you're in is highlighted (gray = you are here), the other is one tap away */}
-          <BarToggle
-            light={speech}
-            icon={Hand}
-            label="Signing"
-            on={!speech}
-            onClick={() => {
-              if (speech) {
-                setTyping(false);
-                nav({ to: "/sign", search: {} });
-              }
-            }}
-          />
-          <BarToggle
-            light={speech}
-            icon={Keyboard}
-            label="Type"
-            on={typing}
-            onClick={() => {
-              if (typing) s.cancelTyped();
-              setTyping(!typing);
-            }}
-          />
-          <BarToggle
-            light={speech}
-            icon={AudioLines}
-            label="Speech"
-            on={speech}
-            onClick={() => {
-              if (!speech) {
-                s.cancelTyped();
-                setTyping(false);
-                nav({ to: "/sign", search: { mode: "speech" } });
-              }
-            }}
-          />
-        </nav>
       </div>
     </div>
+  );
+}
+
+function useIsNative() {
+  const [n, setN] = useState(false);
+  useEffect(() => setN(isNativeHost()), []);
+  return n;
+}
+
+/* ---------------- Mode toggle ---------------- */
+
+/**
+ * SIGNING ⇄ SPEECH (same on all four conversation screens). The mint outline slides between pills
+ * (layoutId "mode-active", spring.pill) and the swap arrows turn 180°.
+ */
+function ModeToggle({
+  mode,
+  onCamera,
+  onChange,
+}: {
+  mode: ConversationMode;
+  onCamera: boolean;
+  onChange: (m: ConversationMode) => void;
+}) {
+  const pills: { id: ConversationMode; label: string; icon: typeof Hand; size: number }[] = [
+    { id: "sign", label: "Signing", icon: Hand, size: 26 },
+    { id: "speech", label: "Speech", icon: AudioLines, size: 22 },
+  ];
+  return (
+    <div
+      role="tablist"
+      aria-label="Who is talking"
+      className="absolute inset-x-5 top-16 z-20 flex items-start justify-between"
+    >
+      {pills.map((p, i) => {
+        const on = mode === p.id;
+        return (
+          <div key={p.id} className="contents">
+            {i === 1 && (
+              <motion.span
+                aria-hidden
+                className="mt-[20px] grid h-[15px] w-[14px] place-items-center"
+                animate={{ rotate: mode === "speech" ? 180 : 0 }}
+                transition={{ duration: DUR.slow, ease: EASE }}
+              >
+                <ArrowLeftRight
+                  className={cn("h-[14px] w-[14px]", onCamera && "text-black dark:text-white")}
+                />
+              </motion.span>
+            )}
+            <div className="flex w-[149px] flex-col items-center">
+              <motion.button
+                {...press}
+                role="tab"
+                aria-selected={on}
+                aria-label={p.label}
+                onClick={() => onChange(p.id)}
+                className={cn(
+                  "relative grid h-14 w-full place-items-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground",
+                  onCamera
+                    ? on
+                      ? "bg-white/85 backdrop-blur-[24px] dark:bg-black/85"
+                      : "border-[0.5px] border-white bg-white/30 backdrop-blur-[24px] dark:bg-white/15"
+                    : on
+                      ? "bg-surface"
+                      : "border-[0.75px] border-black/15 bg-card dark:border-[0.5px] dark:border-white",
+                )}
+              >
+                {on && (
+                  <motion.span
+                    layoutId="mode-active"
+                    transition={SPRING_PILL}
+                    className="absolute inset-0 rounded-full border-2 border-primary"
+                  />
+                )}
+                <p.icon
+                  className={cn("relative", onCamera && "text-black dark:text-white")}
+                  style={{ width: p.size, height: p.size }}
+                  aria-hidden
+                />
+              </motion.button>
+              <span
+                className={cn(
+                  "t-btn mt-1.5",
+                  onCamera ? "text-black dark:text-white" : "text-foreground",
+                )}
+              >
+                {p.label}
+              </span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ---------------- Live · Signing ---------------- */
+
+function SignMode({
+  signingNow,
+  empty,
+  composer,
+  onType,
+  reduce,
+}: {
+  signingNow: boolean;
+  empty: boolean;
+  composer: ReactNode;
+  onType: () => void;
+  reduce: boolean;
+}) {
+  const s = useSignify();
+  const engine = useNativeBridge();
+  const status = s.recognitionStatus;
+  const [dismissed, setDismissed] = useState<RecognitionStatusPayload | null>(null);
+  const statusCard = status && status !== dismissed ? status : null;
+  const lost = engine.tracking === "lost";
+  const hasSheet =
+    !empty || !!s.pending || !!composer || s.suggestTyping || !!statusCard || engine.ttsPlaying;
+
+  return (
+    <>
+      {/* Hand tracking overlay: on the camera, behind the header, toggle, buttons and sheet */}
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute left-[85px] top-[150px] transition-all duration-500",
+          empty || signingNow ? "scale-100 opacity-100" : "scale-95 opacity-0",
+          lost && "opacity-40",
+        )}
+      >
+        <HandTrackingCue gloss={signingNow ? s.liveSign?.gloss : null} signKey={s.liveSign?.at} />
+      </div>
+
+      {/* 18 Hands not in view */}
+      <AnimatePresence>
+        {lost && (
+          <motion.div
+            role="status"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-x-0 bottom-[330px] z-20 mx-auto w-fit rounded-[24px] bg-card/85 px-5 py-2.5 text-center backdrop-blur-[24px]"
+          >
+            <p className="font-label text-[11px] font-semibold">Hands not in view</p>
+            <p className="text-[11px] text-ink-2">Move your hands in front of the camera</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex-1" />
+
+      {/* Captions glass sheet: slides up with the first caption, grows for the agent check */}
+      <AnimatePresence>
+        {hasSheet && (
+          <motion.section
+            aria-label="Live captions"
+            initial={reduce ? { opacity: 0 } : { y: "100%" }}
+            animate={reduce ? { opacity: 1 } : { y: 0 }}
+            exit={reduce ? { opacity: 0 } : { y: "100%" }}
+            transition={{ type: "spring", stiffness: 380, damping: 36, mass: 0.9 }}
+            className="glass-sheet relative z-10 rounded-t-[24px]"
+          >
+            <div className="flex justify-center pt-2">
+              <span className="h-1 w-10 rounded-full bg-white" />
+            </div>
+            <AutoHeight>
+              <div className="min-h-[269px] px-4 pb-[31px] pt-[45px]">
+                <CaptionList variant="live" />
+                <div className="mt-[17px] space-y-3 empty:hidden">
+                  {s.lastFix && !s.pending && <FixedRow />}
+                  {s.pending && <RepairCard onType={onType} />}
+                  <TypingSuggestion onType={onType} />
+                  {statusCard && !s.pending && (
+                    <StatusCard
+                      status={statusCard}
+                      onDismiss={() => setDismissed(statusCard)}
+                      onType={onType}
+                    />
+                  )}
+                  {engine.ttsPlaying && !s.pending && (
+                    <InfoCard
+                      title="Speaking your message…"
+                      body="Your text stays visible. The spoken word is highlighted while it plays."
+                    />
+                  )}
+                  {composer}
+                </div>
+              </div>
+            </AutoHeight>
+          </motion.section>
+        )}
+      </AnimatePresence>
+    </>
+  );
+}
+
+/** Inline undo right after the agent fixes a word. */
+function FixedRow() {
+  const s = useSignify();
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: DUR.base, ease: EASE }}
+      className="flex h-11 items-center gap-2 rounded-full border-[0.5px] border-line-strong bg-surface pl-4 pr-1.5"
+    >
+      <Check className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+      <p className="min-w-0 flex-1 truncate text-[13px] font-medium">Fixed to “{s.lastFix}”</p>
+      <motion.button
+        {...press}
+        onClick={s.undo}
+        className="t-btn flex h-8 items-center gap-1.5 rounded-full bg-card px-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+      >
+        <Undo2 className="h-3.5 w-3.5" aria-hidden /> Undo
+      </motion.button>
+    </motion.div>
+  );
+}
+
+/** 19 / 20: no sign recognized, or recognition unavailable (from the native engine). */
+function StatusCard({
+  status,
+  onDismiss,
+  onType,
+}: {
+  status: RecognitionStatusPayload;
+  onDismiss: () => void;
+  onType: () => void;
+}) {
+  const unavailable =
+    status.state === "modelUnavailable" || status.state === "confidenceThresholdNotValidated";
+  const title = unavailable ? "Sign recognition unavailable" : "No sign recognized";
+  const body = unavailable
+    ? (status.message ?? "Hand tracking still works, but signs aren't being translated right now.")
+    : status.state === "unsupportedGloss"
+      ? "That sign is outside the demo vocabulary."
+      : (status.message ?? null);
+  return (
+    <InfoCard title={title} body={body}>
+      <div className="mt-2 flex flex-col items-start gap-2">
+        <motion.button
+          {...press}
+          onClick={onDismiss}
+          className="t-btn h-[31px] rounded-full border-[1.5px] border-primary bg-card px-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          {unavailable ? "Retry" : "Try again"}
+        </motion.button>
+        <motion.button
+          {...press}
+          onClick={() => {
+            onDismiss();
+            onType();
+          }}
+          className="flex h-[31px] items-center gap-2 rounded-full bg-white/60 px-3 font-label text-[11px] dark:bg-transparent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <Keyboard className="h-[13px] w-[13px]" aria-hidden /> Type instead
+        </motion.button>
+      </div>
+    </InfoCard>
+  );
+}
+
+function InfoCard({
+  title,
+  body,
+  children,
+}: {
+  title: string;
+  body?: string | null;
+  children?: ReactNode;
+}) {
+  return (
+    <motion.div
+      role="status"
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: DUR.base, ease: EASE }}
+      className="rounded-[30px] border-[0.5px] border-line-strong bg-surface px-[33px] py-[13px]"
+    >
+      <p className="flex items-center gap-1.5 font-label text-[11px] font-semibold">
+        <Bot className="h-[11px] w-[11px]" aria-hidden /> {title}
+      </p>
+      {body && <p className="mt-1 text-[11px] leading-[14px] text-ink-2">{body}</p>}
+      {children}
+    </motion.div>
+  );
+}
+
+/* ---------------- Speech · Start / Conversation ---------------- */
+
+function SpeechMode({
+  live,
+  hearing,
+  composer,
+  onStart,
+}: {
+  live: boolean;
+  hearing: boolean;
+  composer: ReactNode;
+  onStart: () => void;
+}) {
+  const engine = useNativeBridge();
+  return (
+    <>
+      {/* Waveform: centered on Start, moves up once the conversation starts */}
+      <motion.div
+        aria-hidden
+        className="absolute inset-x-0 flex justify-center"
+        initial={false}
+        animate={{ top: live ? 292 : 393 }}
+        transition={{ duration: DUR.slow, ease: EASE }}
+      >
+        <Waveform state={!live ? "ready" : hearing || !engine.ttsPlaying ? "live" : "idle"} />
+      </motion.div>
+
+      <div className="flex-1" />
+
+      <AnimatePresence mode="wait" initial={false}>
+        {live ? (
+          <motion.div
+            key="live"
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: DUR.base, ease: EASE }}
+            className="relative px-4 pb-[37px]"
+          >
+            <section
+              aria-label="Captions"
+              className="relative rounded-[24px] border-[0.34px] border-ink-2 bg-card/80 px-[17px] pb-[17px] pt-[27px] backdrop-blur-[34px] dark:border-[0.5px] dark:border-white"
+            >
+              <Bot className="absolute right-4 top-3.5 h-[17px] w-[17px]" aria-hidden />
+              <CaptionList variant="speech" />
+            </section>
+            <div className="mt-3">
+              {composer ?? (
+                <p role="status" className="py-1 text-center text-[14px] leading-5 text-ink-2">
+                  {engine.ttsPlaying && !hearing ? "speaking for you…" : "listening…"}
+                </p>
+              )}
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div key="start" exit={{ opacity: 0 }} className="px-5 pb-[37px]">
+            {composer && <div className="mb-3">{composer}</div>}
+            <PrimaryButton icon={Mic} onClick={onStart}>
+              Start speaking
+            </PrimaryButton>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Mint glow wave along the bottom */}
+      {live && (
+        <div
+          aria-hidden
+          className="speech-glow pointer-events-none absolute -bottom-3 left-[-172px] h-[42px] w-[734px] opacity-80"
+        />
+      )}
+    </>
+  );
+}
+
+/** 13 bars, 4px, round caps, mint. Each bar loops on its own period while listening; idle bars settle low. */
+function Waveform({ state }: { state: "ready" | "live" | "idle" }) {
+  const heights = [14, 24, 18, 33, 22, 30, 16, 28, 33, 20, 26, 14, 22];
+  return (
+    <div
+      className={cn(
+        "flex h-[33px] w-[168px] items-center justify-between",
+        state === "live" ? "wave-live" : state === "idle" && "wave-idle",
+      )}
+    >
+      {heights.map((h, i) => (
+        <span
+          key={i}
+          className="wave-bar w-1 rounded-full bg-primary"
+          style={{
+            height: h,
+            ["--period" as string]: `${0.9 + ((i * 37) % 50) / 100}s`,
+            ["--phase" as string]: `${-i * 0.13}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ---------------- Captions ---------------- */
+
+/** Scrolls to the newest line. New bubbles fade up 12px and scale 0.98 → 1; older ones slide up (layout). */
+function CaptionList({ variant }: { variant: "live" | "speech" }) {
+  const s = useSignify();
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [s.captions]);
+  const latestSigned = [...s.captions].reverse().find((c) => c.speaker === "sam" && c.gloss)?.id;
+  return (
+    <div
+      ref={ref}
+      aria-live="polite"
+      className={cn(
+        "flex flex-col overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        variant === "live" ? "max-h-[196px] gap-[17px]" : "max-h-[170px] gap-[10px]",
+      )}
+    >
+      {s.captions.map((c) => (
+        <Bubble key={c.id} c={c} variant={variant} showGloss={c.id === latestSigned} />
+      ))}
+    </div>
+  );
+}
+
+function Bubble({
+  c,
+  variant,
+  showGloss,
+}: {
+  c: Caption;
+  variant: "live" | "speech";
+  showGloss: boolean;
+}) {
+  const { textScale } = useSignify();
+  const mine = c.speaker === "sam";
+  const size = 20 * textScale;
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{ duration: DUR.base, ease: EASE }}
+      className={cn("shrink-0", mine ? "self-end" : "self-start")}
+    >
+      <div
+        className={cn(
+          variant === "live"
+            ? "max-w-[270px] rounded-[30px] px-[30px] py-[14px]"
+            : "max-w-[276px] rounded-[24px] px-[17px] py-[12px]",
+          mine
+            ? "border-[1.5px] border-primary bg-card/40"
+            : variant === "live"
+              ? "border-[0.5px] border-black/30 dark:border-white"
+              : "bg-surface dark:border-[0.5px] dark:border-white",
+        )}
+      >
+        <span className="sr-only">
+          {mine ? (c.typed ? "You typed:" : "You signed:") : "They said:"}
+        </span>
+        {showGloss && c.gloss && (
+          <p className="t-label mb-0.5 text-ink-3">
+            <span className="sr-only">Signs: </span>
+            {c.gloss}
+          </p>
+        )}
+        <p
+          style={{ fontSize: size, lineHeight: `${size * 1.375}px` }}
+          className={cn("font-medium", !c.final && "opacity-80")}
+        >
+          {variant === "speech" && !mine && (
+            <AudioLines className="mr-1.5 inline h-3 w-3 -translate-y-0.5 text-ink-3" aria-hidden />
+          )}
+          {mine && c.typed && (
+            <Keyboard
+              className="mr-1.5 inline h-3.5 w-3.5 -translate-y-0.5 text-ink-3"
+              aria-hidden
+            />
+          )}
+          <Words text={c.text} />
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+/** Live text: words appear one by one as they're recognized, each fading in over 120ms. */
+function Words({ text }: { text: string }) {
+  const reduce = useReducedMotion();
+  if (reduce) return <>{text}</>;
+  return (
+    <>
+      {text.split(" ").map((w, i) => (
+        <motion.span
+          key={`${i}-${w}`}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.12 }}
+        >
+          {i > 0 ? " " : ""}
+          {w}
+        </motion.span>
+      ))}
+    </>
+  );
+}
+
+/* ---------------- Typing ---------------- */
+
+/** Composer (rises like a sheet): pill input + mint send. Sent text becomes your caption bubble. */
+function Composer({ onDone }: { onDone: () => void }) {
+  const s = useSignify();
+  const [draft, setDraft] = useState("");
+  return (
+    <motion.form
+      initial={{ opacity: 0, y: 24 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 380, damping: 36, mass: 0.9 }}
+      className="flex gap-2.5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const t = draft.trim();
+        if (!t) return;
+        if (s.awaitingTyped) s.fixTyped(t);
+        else s.say(t, "sam", { typed: true });
+        setDraft("");
+        onDone();
+      }}
+    >
+      <label htmlFor="typed" className="sr-only">
+        Type your message
+      </label>
+      <input
+        id="typed"
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={s.awaitingTyped ? "Type the right word…" : "Type your message…"}
+        className="h-12 min-w-0 flex-1 rounded-full border border-line bg-card px-5 text-[16px] outline-none placeholder:text-ink-3 focus:border-primary"
+      />
+      <motion.button
+        {...press}
+        type="submit"
+        aria-label="Send"
+        className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+      >
+        <ArrowUp className="h-5 w-5" aria-hidden />
+      </motion.button>
+    </motion.form>
   );
 }

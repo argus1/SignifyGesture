@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 
 import { SignifyProvider } from "@/lib/signify-store";
 import { Toaster } from "@/components/ui/sonner";
+import { ThemeProvider, themeBootScript } from "@/lib/theme";
 import { BridgeSimulator } from "@/components/signify/BridgeSimulator";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
@@ -85,9 +86,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Signify · Talk face to face" },
-      { name: "description", content: "Signify helps Deaf and hearing people talk face to face with live sign translation." },
+      {
+        name: "description",
+        content:
+          "Signify helps Deaf and hearing people talk face to face with live sign translation.",
+      },
       { property: "og:title", content: "Signify · Talk face to face" },
-      { property: "og:description", content: "Live sign translation with an AI agent that checks and repairs captions." },
+      {
+        property: "og:description",
+        content: "Live sign translation with an AI agent that checks and repairs captions.",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
       { name: "twitter:site", content: "@Lovable" },
@@ -99,7 +107,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { rel: "preconnect", href: "https://fonts.googleapis.com" },
       { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700;900&family=Sora:wght@400;600&display=swap" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;900&family=Sora:wght@400;500;600&display=swap",
+      },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),
@@ -111,8 +122,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
         <HeadContent />
       </head>
       <body>
@@ -130,15 +142,21 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <SignifyProvider>
-        <div className="app-backdrop min-h-dvh bg-muted sm:py-6">
-          {/* id + transform: sheets portal in here, and "fixed" overlays fill the phone instead of the browser */}
-          <main id="phone-frame" className="relative mx-auto [transform:translateZ(0)] flex min-h-dvh w-full max-w-[390px] flex-col overflow-hidden bg-background sm:min-h-[845px] sm:rounded-[2rem] sm:shadow-2xl">
-            <Outlet />
-          </main>
-          {/* Dev tool lives outside the phone frame */}
-          <BridgeSimulator />
-        </div>
-        <Toaster position="top-center" />
+        <ThemeProvider>
+          {/* Spec: a 390px app column centered on a plain page (white in light mode, black in dark) */}
+          <div className="app-backdrop min-h-dvh bg-background sm:py-6">
+            {/* id + transform: sheets portal in here, and "fixed" overlays fill the phone instead of the browser */}
+            <main
+              id="phone-frame"
+              className="relative mx-auto [transform:translateZ(0)] flex min-h-dvh w-full max-w-[390px] flex-col overflow-hidden bg-background sm:h-[845px] sm:min-h-0 sm:rounded-[2rem] sm:shadow-[0_0_0_1px_var(--line),0_20px_60px_rgba(0,0,0,0.12)]"
+            >
+              <Outlet />
+            </main>
+            {/* Dev tool lives outside the phone frame */}
+            <BridgeSimulator />
+          </div>
+          <Toaster position="top-center" />
+        </ThemeProvider>
       </SignifyProvider>
     </QueryClientProvider>
   );

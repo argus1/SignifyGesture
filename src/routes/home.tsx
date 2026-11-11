@@ -1,127 +1,370 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { forwardRef, useRef, useState } from "react";
-import { flushSync } from "react-dom";
-import { Hand, Mic, ArrowLeftRight, AudioLines } from "lucide-react";
-import { TopBar, TabBar } from "@/components/signify/ui";
-import { CameraControl, CameraViewport } from "@/components/signify/CameraViewport";
-import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
+import { motion, useReducedMotion } from "framer-motion";
+import { useState } from "react";
+import {
+  AudioLines,
+  Hand,
+  Share,
+  Camera,
+  Captions,
+  Smartphone,
+  Radio as RadioIcon,
+  QrCode,
+  type LucideIcon,
+} from "lucide-react";
+import { toast } from "sonner";
+import {
+  Header,
+  TabBar,
+  GlassSheet,
+  SheetItem,
+  PrimaryButton,
+  SecondaryButton,
+  Eyebrow,
+  Radio,
+  press,
+  DUR,
+  EASE,
+} from "@/components/signify/ui";
+import { useSignify } from "@/lib/signify-store";
 import { cn } from "@/lib/utils";
 import { seo } from "@/lib/seo";
 
 export const Route = createFileRoute("/home")({
-  head: () => seo("Translate", "Translate between ASL and spoken English."),
+  head: () => seo("Signify", "Pick who is talking: speech or signing."),
   component: Home,
 });
 
-/**
- * One side of the direction bar: how you communicate (big) + the language (small), on its own rounded pill,
- * with who it is underneath (You = the signer, Them = the person speaking), like Google Translate's "Your / Their language".
- * The label is part of the pill, so it travels with it on swap.
- */
-const ModeLabel = forwardRef<HTMLSpanElement, { mode: "sign" | "speech"; light?: boolean }>(function ModeLabel({ mode, light = false }, ref) {
-  const Icon = mode === "sign" ? Hand : AudioLines;
-  return (
-    <span ref={ref} className="relative z-10 flex flex-col items-stretch gap-1 will-change-transform">
-    <span className={cn("flex items-center justify-center gap-2 rounded-full px-3 py-2 transition-colors duration-500", light ? "border border-foreground/15 bg-background" : "bg-background/85 backdrop-blur-md")}>
-      <Icon className="h-5 w-5 shrink-0" aria-hidden />
-      <span className="leading-tight">
-        <span className="block text-base font-bold">{mode === "sign" ? "Signing" : "Speech"}</span>
-        <span className="block whitespace-nowrap text-xs text-muted-foreground">{mode === "sign" ? "ASL" : "Spoken English"}</span>
-      </span>
-    </span>
-    <span className={cn("text-center text-xs font-semibold transition-colors duration-500", light ? "text-muted-foreground" : "text-white drop-shadow-sm")}>{mode === "sign" ? "You" : "Them"}</span>
-    </span>
-  );
-});
+/** Home → stagger in from the headline down (Launch → Home handoff). */
+const item = {
+  hidden: { opacity: 0, y: 12 },
+  show: { opacity: 1, y: 0, transition: { duration: DUR.base, ease: EASE } },
+};
 
-/**
- * Direction bar. On swap the two pills glide to the middle and cross over each other
- * (one passes over the other, no vertical movement) and land in each other's place. The arrow stays put underneath.
- */
-function DirectionBar({ fromAsl, onSwap, onSwapStart, light = false }: { fromAsl: boolean; onSwap: () => void; onSwapStart?: () => void; light?: boolean }) {
-  const left = useRef<HTMLSpanElement>(null);
-  const right = useRef<HTMLSpanElement>(null);
-  const busy = useRef(false);
+function Home() {
+  const nav = useNavigate();
+  const s = useSignify();
+  const reduce = useReducedMotion();
+  const [share, setShare] = useState<0 | 1 | 2>(0); // 0 closed · 1 "Other person nearby?" · 2 "What do they get?"
 
-  const swap = () => {
-    const a = left.current, b = right.current;
-    const reduce = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (busy.current) return;
-    onSwapStart?.(); // start the scene cross-fade at the same moment the pills start moving
-    if (!a || !b || reduce || !a.animate) { onSwap(); return; }
-    busy.current = true;
-    const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-    const d = (rb.left + rb.width / 2) - (ra.left + ra.width / 2);
-    const opts: KeyframeAnimationOptions = { duration: 340, easing: "cubic-bezier(0.65, 0, 0.35, 1)", fill: "forwards" };
-    a.style.zIndex = "20";
-    const ma = a.animate([{ transform: "none" }, { transform: `translateX(${d / 2}px) scale(1.04)` }, { transform: `translateX(${d}px)` }], opts);
-    const mb = b.animate([{ transform: "none" }, { transform: `translateX(${-d / 2}px) scale(0.96)` }, { transform: `translateX(${-d}px)` }], opts);
-    ma.onfinish = () => {
-      // swap the labels, then drop the transforms in the same frame so nothing jumps
-      flushSync(onSwap);
-      ma.cancel(); mb.cancel();
-      a.style.zIndex = ""; busy.current = false;
-    };
+  const goLive = () => {
+    s.reset();
+    setShare(0);
+    nav({ to: "/sign", search: {} });
+  };
+  const goSpeech = () => {
+    s.reset();
+    nav({ to: "/sign", search: { mode: "speech" } });
   };
 
   return (
-    <div className="relative mx-5 mt-2 grid grid-cols-[1fr_auto_1fr] items-start gap-1">
-      <ModeLabel ref={left} light={light} mode={fromAsl ? "sign" : "speech"} />
-      <button onClick={swap} aria-label="Swap translation direction"
-        className={cn("relative z-0 grid h-11 w-11 place-items-center rounded-full transition-colors duration-500 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40", light ? "bg-muted" : "bg-background/85 backdrop-blur-md")}>
-        <ArrowLeftRight className="h-5 w-5" />
-      </button>
-      <ModeLabel ref={right} light={light} mode={fromAsl ? "speech" : "sign"} />
+    <div className="relative flex flex-1 flex-col">
+      <Header />
+      <motion.div
+        className="flex flex-1 flex-col items-center"
+        initial={reduce ? false : "hidden"}
+        animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
+      >
+        <motion.h1 variants={item} className="headline mt-[113px] text-center text-[41.9px]">
+          Hello Sam!
+          <span className="block text-ink-4">Who is talking?</span>
+        </motion.h1>
+        <motion.p variants={item} className="t-label mt-[36px] text-ink-3">
+          Pick your side
+        </motion.p>
+
+        <motion.div variants={item} className="mt-[29px] flex flex-col gap-[30px]">
+          <SidePill
+            icon={AudioLines}
+            iconSize={22}
+            title="Speech"
+            sub="Spoken English"
+            onClick={goSpeech}
+            strong
+          />
+          <SidePill
+            icon={Hand}
+            iconSize={26}
+            title="Signing"
+            sub="ASL"
+            subMuted
+            onClick={() => setShare(1)}
+          />
+        </motion.div>
+
+        <motion.div variants={item} className="mt-[30px] w-[251px]">
+          <motion.button
+            {...press}
+            onClick={() => setShare(1)}
+            className="t-btn h-[58px] w-full rounded-full bg-primary text-black active:brightness-[0.94] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+          >
+            Start a conversation
+          </motion.button>
+        </motion.div>
+      </motion.div>
+      <TabBar />
+
+      <ShareSheet
+        step={share}
+        setStep={setShare}
+        onSkip={goLive}
+        onShare={(what) => {
+          toast(what === "camera" ? "Sharing your sign camera" : "Sharing live captions");
+          goLive();
+        }}
+      />
     </div>
   );
 }
 
-/**
- * Translator-style home, camera-first: the camera fills the screen and everything floats on top.
- * The direction bar says what the app does; one big button starts.
- */
-function Home() {
-  const nav = useNavigate();
-  const [fromAsl, setFromAsl] = useState(true); // pill labels (swap when the pills land)
-  const [scene, setScene] = useState(true); // everything else (flips the instant you tap, so the fade runs with the pills)
-  // One conversation screen: camera mode for signing, white speech mode when the other person talks (mic starts right away)
-  const start = () => nav({ to: "/sign", search: scene ? {} : { mode: "speech" } });
-
+/** 251 × 79 side pill: icon on the left, title (Sora SemiBold 13) over a label (Sora 11). */
+function SidePill({
+  icon: Icon,
+  iconSize,
+  title,
+  sub,
+  subMuted,
+  strong,
+  onClick,
+}: {
+  icon: LucideIcon;
+  iconSize: number;
+  title: string;
+  sub: string;
+  subMuted?: boolean;
+  strong?: boolean;
+  onClick: () => void;
+}) {
   return (
-    <div className="relative flex flex-1 flex-col">
-      {/* Full-screen background: camera (signing) and white (speech) cross-fade on swap */}
-      <div aria-hidden className={cn("absolute inset-0 bg-background", scene && "native-camera-backdrop")} />
-      <div className={cn("absolute inset-0 transition-opacity duration-500 ease-out", scene ? "opacity-100" : "pointer-events-none opacity-0")}>
-        <CameraViewport className="absolute inset-0" label="Native camera" enabled={scene} />
-        {/* Scrims keep floating text readable over any camera image */}
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-gradient-to-b from-black/45 to-transparent" />
-        <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/50 to-transparent" />
-      </div>
+    <motion.button
+      {...press}
+      onClick={onClick}
+      aria-label={`${title}, ${sub}`}
+      className={cn(
+        "relative flex h-[79px] w-[251px] items-center justify-center rounded-[30px] bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+        strong ? "border-[0.5px] border-line-strong" : "border border-line",
+      )}
+    >
+      <Icon
+        className="absolute left-[35px]"
+        style={{ width: iconSize, height: iconSize }}
+        aria-hidden
+      />
+      <span className="flex flex-col items-center pl-6">
+        <span className="t-pill leading-4">{title}</span>
+        <span className={cn("t-label leading-[14px]", subMuted ? "text-ink-2" : "text-foreground")}>
+          {sub}
+        </span>
+      </span>
+    </motion.button>
+  );
+}
 
-      <div className="relative z-10 flex flex-1 flex-col">
-        <TopBar onDark={scene} />
-        <DirectionBar fromAsl={fromAsl} light={!scene} onSwapStart={() => setScene((v) => !v)} onSwap={() => setFromAsl((v) => !v)} />
-        {scene && <CameraControl />}
-
-        {/* Center cue: hand (signing) and voice bars (speech) cross-fade */}
-        <div className="relative flex flex-1 items-center justify-center">
-          <div className={cn("absolute transition-all duration-500 ease-out", scene ? "scale-100 opacity-100" : "scale-90 opacity-0")}><HandTrackingCue /></div>
-          <div aria-hidden className={cn("absolute flex h-24 items-center justify-center gap-1.5 transition-all duration-500 ease-out", scene ? "scale-90 opacity-0" : "scale-100 opacity-100")}>
-            {[18, 34, 24, 50, 30, 64, 40, 56, 28, 46, 22, 38, 16].map((hgt, i) => (
-              <span key={i} className="voice-bar w-2 rounded-full bg-primary" style={{ height: hgt, animationDelay: `${i * 90}ms` }} />
-            ))}
+/**
+ * Share · Nearby (step 1) grows into Share · What they get (step 2) in the same sheet.
+ * Skip keeps the conversation on this phone.
+ */
+function ShareSheet({
+  step,
+  setStep,
+  onSkip,
+  onShare,
+}: {
+  step: 0 | 1 | 2;
+  setStep: (s: 0 | 1 | 2) => void;
+  onSkip: () => void;
+  onShare: (what: "camera" | "captions") => void;
+}) {
+  const [what, setWhat] = useState<"camera" | "captions">("camera");
+  const [how, setHow] = useState<"tap" | "airdrop" | "qr">("tap");
+  return (
+    <GlassSheet
+      open={step > 0}
+      onClose={() => setStep(0)}
+      label={step === 2 ? "What do they get?" : "Other person nearby?"}
+      layout
+    >
+      {step === 1 ? (
+        <div key="s1" className="px-[23px] pb-[31px]">
+          <SheetItem>
+            <p className="t-label mt-[19px] text-center text-white">Other person nearby?</p>
+          </SheetItem>
+          <SheetItem>
+            <motion.button
+              {...press}
+              onClick={() => setStep(2)}
+              className="mx-[9px] mt-3 flex h-[79px] w-[329px] max-w-[calc(100%-18px)] items-center gap-[30px] rounded-[26px] bg-card pl-[33px] pr-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:border-[0.5px] dark:border-white"
+            >
+              <Share className="h-4 w-4 shrink-0" aria-hidden />
+              <span>
+                <span className="block text-[15px] font-medium leading-[19px]">
+                  Share to their phone
+                </span>
+                <span className="block text-[11.3px] leading-[14px] text-ink-2">
+                  Tap phones or AirDrop. They join in their browser, no app needed.
+                </span>
+              </span>
+            </motion.button>
+          </SheetItem>
+          <SheetItem className="mt-[33px] flex gap-[22px]">
+            <SecondaryButton onClick={onSkip} className="w-[152px] dark:border-white">
+              Skip
+            </SecondaryButton>
+            <motion.button
+              {...press}
+              onClick={() => setStep(2)}
+              className="t-btn h-11 flex-1 rounded-full bg-primary text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+            >
+              Share sign camera
+            </motion.button>
+          </SheetItem>
+        </div>
+      ) : (
+        <div key="s2" className="px-5 pb-[31px]">
+          <SheetItem>
+            <p className="t-label mt-3 text-center text-white">Step 1 of 2</p>
+          </SheetItem>
+          <SheetItem>
+            <h2 className="t-title mt-[14px] text-center">What do they get?</h2>
+          </SheetItem>
+          <div
+            role="radiogroup"
+            aria-label="What do they get?"
+            className="mt-[15px] grid gap-[10px]"
+          >
+            <SheetItem>
+              <ChoiceCard
+                icon={Camera}
+                title="Your sign camera"
+                desc="They watch you sign live, with captions, on their phone."
+                on={what === "camera"}
+                onClick={() => setWhat("camera")}
+              />
+            </SheetItem>
+            <SheetItem>
+              <ChoiceCard
+                icon={Captions}
+                title="Live captions"
+                desc="They speak into their phone. You read their words as captions."
+                on={what === "captions"}
+                onClick={() => setWhat("captions")}
+              />
+            </SheetItem>
           </div>
+          <SheetItem>
+            <Eyebrow className="mt-[30px] justify-center">Step 2 of 2 · How to share</Eyebrow>
+          </SheetItem>
+          <SheetItem>
+            <div
+              role="radiogroup"
+              aria-label="How to share"
+              className="mt-3 flex justify-between px-[30px]"
+            >
+              <MethodButton
+                icon={Smartphone}
+                label="Tap phones"
+                on={how === "tap"}
+                onClick={() => setHow("tap")}
+              />
+              <MethodButton
+                icon={RadioIcon}
+                label="AirDrop"
+                on={how === "airdrop"}
+                onClick={() => setHow("airdrop")}
+              />
+              <MethodButton
+                icon={QrCode}
+                label="QR code"
+                on={how === "qr"}
+                onClick={() => setHow("qr")}
+              />
+            </div>
+          </SheetItem>
+          <SheetItem className="mt-[72px]">
+            <PrimaryButton icon={Smartphone} onClick={() => onShare(what)}>
+              {what === "camera" ? "Share sign camera" : "Share live captions"}
+            </PrimaryButton>
+          </SheetItem>
         </div>
+      )}
+    </GlassSheet>
+  );
+}
 
-        <div className="px-5 pb-4">
-          <button onClick={start}
-            className={cn("flex min-h-16 w-full items-center justify-center gap-3 rounded-full bg-primary px-7 text-lg font-bold transition-[transform,box-shadow] duration-500 active:scale-95 focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40", scene ? "shadow-xl shadow-black/30" : "shadow-none")}>
-            {scene ? <Hand className="h-6 w-6" aria-hidden /> : <Mic className="h-6 w-6" aria-hidden />}
-            {scene ? "Start conversation" : "Start speaking"}
-          </button>
-        </div>
-        <TabBar tone={scene ? "dark" : "light"} />
-      </div>
-    </div>
+/** 350 × 92 choice: selected = #F2F2F2 + 2px mint; unselected = 0.5px black hairline. */
+function ChoiceCard({
+  icon: Icon,
+  title,
+  desc,
+  on,
+  onClick,
+}: {
+  icon: LucideIcon;
+  title: string;
+  desc: string;
+  on: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      {...press}
+      role="radio"
+      aria-checked={on}
+      onClick={onClick}
+      className={cn(
+        "flex h-[92px] w-full items-center gap-4 rounded-[24px] pl-4 pr-[21px] text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+        on
+          ? "border-2 border-primary bg-surface"
+          : "border-[0.5px] border-foreground bg-transparent",
+      )}
+    >
+      <span
+        className={cn(
+          "grid h-[52px] w-[52px] shrink-0 place-items-center rounded-full",
+          on ? "border-[0.5px] border-foreground" : "bg-card",
+        )}
+      >
+        <Icon className="h-[18px] w-[18px]" aria-hidden />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-[16px] font-medium">{title}</span>
+        <span className="block text-[12px] leading-[15px] text-ink-2">{desc}</span>
+      </span>
+      <Radio on={on} />
+    </motion.button>
+  );
+}
+
+/** 64px circle, #F2F2F2; selected adds a 2px mint ring. Label below. */
+function MethodButton({
+  icon: Icon,
+  label,
+  on,
+  onClick,
+}: {
+  icon: LucideIcon;
+  label: string;
+  on: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <motion.button
+      {...press}
+      role="radio"
+      aria-checked={on}
+      onClick={onClick}
+      className="flex w-16 flex-col items-center gap-3 focus-visible:outline-none"
+    >
+      <span
+        className={cn(
+          "grid h-16 w-16 place-items-center rounded-full bg-surface",
+          on && "border-2 border-primary",
+        )}
+      >
+        <Icon className="h-5 w-5" aria-hidden />
+      </span>
+      <span className="whitespace-nowrap text-[13px] font-medium">{label}</span>
+    </motion.button>
   );
 }
