@@ -218,6 +218,13 @@ Debug and Release; the unit-test bundle uses `com.argussun.signifygesture2.tests
 Signing & Capabilities panel are overwritten when XcodeGen regenerates the
 project. Native CI checks both configurations after generation.
 
+`Config/Info.plist` declares all four orientations under
+`UISupportedInterfaceOrientations~ipad` to support iPad multitasking, including
+portrait upside down. The unsuffixed orientation list preserves the existing
+iPhone behavior. Do not remove the iPad override or disable multitasking with
+`UIRequiresFullScreen` to work around an upload rejection. Native CI verifies
+the orientation list in the built Release app.
+
 After pulling a bundle-identifier correction:
 
 1. Run `xcodegen generate --spec iOSApp/project.yml` and reopen

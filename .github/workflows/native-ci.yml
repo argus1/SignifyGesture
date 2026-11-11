@@ -90,4 +90,28 @@ jobs:
             -scheme SignifyGesture \
             -configuration Release \
             -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath "$RUNNER_TEMP/signify-release" \
             CODE_SIGNING_ALLOWED=NO build
+      - name: Verify built iPad multitasking orientations
+        run: |
+          python3 - <<'PY'
+          import os
+          import plistlib
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "signify-release/Build/Products/Release-iphonesimulator/SignifyGesture.app/Info.plist"
+          with path.open("rb") as source:
+              info = plistlib.load(source)
+          expected = {
+              "UIInterfaceOrientationPortrait",
+              "UIInterfaceOrientationPortraitUpsideDown",
+              "UIInterfaceOrientationLandscapeLeft",
+              "UIInterfaceOrientationLandscapeRight",
+          }
+          actual = info.get("UISupportedInterfaceOrientations~ipad", info.get("UISupportedInterfaceOrientations", []))
+          if set(actual) != expected:
+              raise SystemExit(f"iPad multitasking requires all four orientations; got {actual}")
+          if info.get("UIRequiresFullScreen", False):
+              raise SystemExit("iPad multitasking must not be disabled with UIRequiresFullScreen")
+          print("Built iPad bundle supports all four multitasking orientations.")
+          PY
