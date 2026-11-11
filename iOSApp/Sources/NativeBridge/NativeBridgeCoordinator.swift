@@ -141,10 +141,11 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
             self?.emit(method: "onNativeError", payload: ["feature": "camera", "message": message])
         }
         speech.setPlaybackStateChangeHandler { [weak self] isPlaying in
-            DispatchQueue.main.async {
-                self?.transcription.setPlaybackActive(isPlaying)
-            }
+            self?.transcription.setPlaybackActive(isPlaying)
             self?.emit(method: "onTTSPlaybackState", payload: isPlaying)
+        }
+        speech.setErrorHandler { [weak self] message in
+            self?.emit(method: "onNativeError", payload: ["feature": "tts", "message": message])
         }
         speech.setProgressHandler { [weak self] progress in
             self?.emit(

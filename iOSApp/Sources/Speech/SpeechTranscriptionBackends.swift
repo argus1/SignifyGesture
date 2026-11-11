@@ -23,6 +23,7 @@ enum SpeechTranscriptionError: LocalizedError {
     case unsupportedLocale
     case recognizerUnavailable
     case microphoneUnavailable
+    case audioConversionFailed
 
     var errorDescription: String? {
         switch self {
@@ -32,6 +33,8 @@ enum SpeechTranscriptionError: LocalizedError {
             return "Speech recognition is unavailable right now. Check your connection or try again later."
         case .microphoneUnavailable:
             return "No microphone is available on this device."
+        case .audioConversionFailed:
+            return "Microphone audio could not be prepared for speech recognition."
         }
     }
 }
@@ -48,6 +51,7 @@ final class AnalyzerTranscriptionBackend: SpeechTranscriptionBackend, @unchecked
     // Read on the audio thread after prepare() completes; never mutated afterwards.
     private var converter: AVAudioConverter?
     private var analyzerFormat: AVAudioFormat?
+    private var onError: ((Error) -> Void)?
 
     init(locale: Locale) {
         self.locale = locale
@@ -61,6 +65,7 @@ final class AnalyzerTranscriptionBackend: SpeechTranscriptionBackend, @unchecked
         onError: @escaping (Error) -> Void,
         onProgress: @escaping (String) -> Void
     ) async throws {
+        self.onError = onError
         guard let supportedLocale = await SpeechTranscriber.supportedLocale(equivalentTo: locale) else {
             throw SpeechTranscriptionError.unsupportedLocale
         }
@@ -77,8 +82,11 @@ final class AnalyzerTranscriptionBackend: SpeechTranscriptionBackend, @unchecked
         ) ?? inputFormat
         try await analyzer.prepareToAnalyze(in: format)
         if format != inputFormat {
-            converter = AVAudioConverter(from: inputFormat, to: format)
-            converter?.primeMethod = .none
+            guard let converter = AVAudioConverter(from: inputFormat, to: format) else {
+                throw SpeechTranscriptionError.audioConversionFailed
+            }
+            self.converter = converter
+            converter.primeMethod = .none
         }
         analyzerFormat = format
 
@@ -107,7 +115,15 @@ final class AnalyzerTranscriptionBackend: SpeechTranscriptionBackend, @unchecked
 
     func endUtterance() {
         guard let analyzer else { return }
-        Task { try? await analyzer.finalize(through: nil) }
+        let onError = onError
+        Task {
+            do {
+                try await analyzer.finalize(through: nil)
+            } catch is CancellationError {
+            } catch {
+                onError?(error)
+            }
+        }
     }
 
     func stop() {
@@ -122,10 +138,30 @@ final class AnalyzerTranscriptionBackend: SpeechTranscriptionBackend, @unchecked
     }
 
     private func convert(_ buffer: AVAudioPCMBuffer) -> AVAudioPCMBuffer? {
-        guard let converter, let analyzerFormat else { return buffer }
+        guard let converter, let analyzerFormat else {
+            // The input tap's buffer is reused after its callback returns; the analyzer consumes asynchronously.
+            guard let copy = AVAudioPCMBuffer(pcmFormat: buffer.format, frameCapacity: buffer.frameLength) else {
+                onError?(SpeechTranscriptionError.audioConversionFailed)
+                return nil
+            }
+            copy.frameLength = buffer.frameLength
+            let source = UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList)
+            let destination = UnsafeMutableAudioBufferListPointer(copy.mutableAudioBufferList)
+            for (input, output) in zip(source, destination) {
+                guard let inputData = input.mData, let outputData = output.mData else {
+                    onError?(SpeechTranscriptionError.audioConversionFailed)
+                    return nil
+                }
+                memcpy(outputData, inputData, Int(input.mDataByteSize))
+            }
+            return copy
+        }
         let ratio = analyzerFormat.sampleRate / buffer.format.sampleRate
         let capacity = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up)) + 1
-        guard let output = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: capacity) else { return nil }
+        guard let output = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: capacity) else {
+            onError?(SpeechTranscriptionError.audioConversionFailed)
+            return nil
+        }
         var consumed = false
         var error: NSError?
         let status = converter.convert(to: output, error: &error) { _, inputStatus in
@@ -137,7 +173,11 @@ final class AnalyzerTranscriptionBackend: SpeechTranscriptionBackend, @unchecked
             inputStatus.pointee = .haveData
             return buffer
         }
-        return status == .error || error != nil ? nil : output
+        if status == .error || error != nil {
+            onError?(error ?? SpeechTranscriptionError.audioConversionFailed as NSError)
+            return nil
+        }
+        return output
     }
 }
 

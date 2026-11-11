@@ -223,6 +223,14 @@ Speech uses `{ type: "triggerSpeechRecognition", active }` and
 `onSpeechTranscribed`, `onAudioLevel` (~15 Hz, 0–1), `onTTSPlaybackState`, and
 `onTTSProgress` (the word being spoken).
 
+Saving typed text and receiving a sign translation never start TTS. Review the
+visible message, optionally **Edit** it, then tap **Speak**. **Copy** reports
+clipboard failures instead of claiming success. **Clear transcript** confirms
+before clearing and offers **Undo clear**. Voice mute stops current playback
+and disables Speak; enabling Voice does not play anything automatically.
+Editing, clearing, exiting, backgrounding, and audio interruptions stop playback
+without deleting the transcript (except when explicitly cleared).
+
 ```sh
 npm test -- src/test/native-bridge.test.ts src/test/camera-lifecycle.test.tsx src/test/speech-flow.test.tsx
 xcodegen generate --spec iOSApp/project.yml
@@ -242,9 +250,20 @@ Simulator tests also do not verify the microphone, speech models, or haptics.
 On a physical device, check: the mic rationale appears only on entering Speech
 mode; denial shows the Type fallback and Settings link; partial captions grow
 and finalize after a pause; the waveform follows a speaker's voice; typed text
-is spoken with a haptic at start and end (and a flash on iPad); **Stop
+stays silent until **Speak** is tapped, then is spoken with a haptic at start
+and end (and a flash on iPad); **Stop
 speaking** cuts playback immediately with a warning haptic; the app's own voice
 is never captioned; and backgrounding pauses captions, then resumes them.
+
+Automated coverage includes actual WKWebView command/error replies, caption
+assembly and audio-level normalization, injected synthesizer/audio-session
+tests for empty text, activation failure, interruptions, immediate stop,
+replacement callbacks and word progress, and React tests for explicit speech,
+review/edit/copy/mute/clear, partial/final captions, error/denied states, mic
+mode lifecycle, waveform levels, and TTS exclusion. Browser smoke testing also
+checks typed save → edit → explicit Speak → read-along → Stop → clear/undo.
+These checks do not replace physical-device permission dialogs, real speech
+accuracy, echo testing, haptic perception, VoiceOver, or Deaf/HoH feedback.
 
 ## Current capability boundary
 

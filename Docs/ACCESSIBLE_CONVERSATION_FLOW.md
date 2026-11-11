@@ -188,6 +188,14 @@ Speak only the confirmed text. Keep the text visible during playback and expose
 text** available. TTS is optional; the written transcript remains the source
 of truth.
 
+Implemented behavior: saving a typed message or receiving a translated sentence
+only adds visible text. Neither starts playback, even when Voice is enabled.
+Use **Edit** and **Save changes** to correct a message, then its **Speak** button
+to play that exact text. **Copy** preserves the text verbatim (clipboard failures
+are surfaced); **Clear transcript** requires confirmation and offers **Undo
+clear**. Muting, editing, clearing, or leaving the conversation stops playback.
+Incoming captions remain independent of these playback controls.
+
 ### 6. Local/cloud choice and sync failure
 
 ```text
@@ -278,8 +286,8 @@ finishes, or is stopped, and an edge flash marks start/end where there is no
 Taptic Engine (iPad). A **Stop speaking** control is shown whenever TTS is
 playing. The mic is muted while TTS plays so the app never captions itself.
 
-Still design/engineering gaps: onboarding and settings screens; explicit
-transcript review/edit before playback; clear confirmation; reliable no-hands/poor-lighting state signals; production local
+Still design/engineering gaps: onboarding and settings screens; reliable
+no-hands/poor-lighting state signals; production local
 storage and cloud consent/retry; and end-to-end status announcements.
 
 **Accessibility review: unvalidated.** No Deaf/HoH or accessibility-informed

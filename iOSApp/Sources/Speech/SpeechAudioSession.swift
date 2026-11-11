@@ -1,14 +1,21 @@
 import AVFoundation
 import Foundation
+import OSLog
+
+protocol SpeechAudioSessionManaging: AnyObject {
+    func beginSpeaking() throws
+    func endSpeaking()
+}
 
 /// Owns the app's single AVAudioSession so live captions and spoken playback don't fight over it.
 /// Listening needs `.playAndRecord`; playback alone uses `.playback` so it isn't routed to the receiver.
-final class SpeechAudioSession: @unchecked Sendable {
+final class SpeechAudioSession: SpeechAudioSessionManaging, @unchecked Sendable {
     static let shared = SpeechAudioSession()
 
     private let lock = NSLock()
     private var listening = false
     private var speaking = false
+    private let logger = Logger(subsystem: "com.argussun.signifygesture", category: "SpeechAudioSession")
 
     func beginListening() throws {
         lock.lock()
@@ -26,21 +33,34 @@ final class SpeechAudioSession: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         listening = false
-        try? configure()
+        do {
+            try configure()
+        } catch {
+            logger.error("Could not release microphone session: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
-    func beginSpeaking() {
+    func beginSpeaking() throws {
         lock.lock()
         defer { lock.unlock() }
         speaking = true
-        try? configure()
+        do {
+            try configure()
+        } catch {
+            speaking = false
+            throw error
+        }
     }
 
     func endSpeaking() {
         lock.lock()
         defer { lock.unlock() }
         speaking = false
-        try? configure()
+        do {
+            try configure()
+        } catch {
+            logger.error("Could not release playback session: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     private func configure() throws {

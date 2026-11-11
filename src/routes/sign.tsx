@@ -13,6 +13,9 @@ import {
   Mic,
   MicOff,
   Square,
+  Pencil,
+  Copy,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 import {
@@ -22,17 +25,21 @@ import {
   type Caption,
   type TTSCue,
 } from "@/lib/signify-store";
-import {
-  isNativeHost,
-  stopTTSPlayback,
-  triggerSpeechRecognition,
-  triggerTTSPlayback,
-} from "@/lib/nativeBridge";
+import { isNativeHost, stopTTSPlayback, triggerSpeechRecognition } from "@/lib/nativeBridge";
 import type { RecognitionStatusPayload } from "@/types/nativeBridge";
 import { captionsBlocked, speechStatusText } from "@/lib/speechStatus";
 import { CameraControl, CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
 import { AgentChip, RepairCard, TypingSuggestion } from "@/components/signify/agent";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { seo } from "@/lib/seo";
@@ -44,8 +51,13 @@ export const Route = createFileRoute("/sign")({
     search["mode"] === "speech" ? { mode: "speech" } : {},
   head: () =>
     seo("Conversation", "Live sign ⇄ speech conversation with captions and agent repair."),
-  component: Conversation,
+  component: ConversationRoute,
 });
+
+function ConversationRoute() {
+  const { mode = "sign" } = Route.useSearch();
+  return <Conversation mode={mode} />;
+}
 
 /**
  * One line of the conversation, Google Translate style: your words on the right (mint), theirs on the left (gray).
@@ -54,7 +66,7 @@ export const Route = createFileRoute("/sign")({
  * ("HELLO I WANT ICED…") above the English. Tap an older line to see its signs again.
  * Your lines get a replay button so the other person can hear them again.
  */
-function Bubble({
+export function Bubble({
   c,
   latest,
   spoken,
@@ -65,8 +77,10 @@ function Bubble({
   spoken?: { location: number; length: number } | null;
 }) {
   const mine = c.speaker === "sam";
-  const { textScale } = useSignify();
+  const { textScale, readAloud, speakCaption, editCaption } = useSignify();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(c.text);
   const showGloss = !!c.gloss && (latest || open);
   const SourceIcon = c.typed ? Keyboard : Hand;
   const icon = mine ? (
@@ -80,9 +94,10 @@ function Bubble({
     <div className={cn("flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
       {mine && c.final && (
         <button
-          onClick={() => triggerTTSPlayback(c.text)}
-          aria-label={`Say “${c.text}” again`}
-          className="mb-1 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted active:scale-95 transition-transform"
+          onClick={() => speakCaption(c.id)}
+          disabled={!readAloud || editing}
+          aria-label={`Speak: ${c.text}`}
+          className="mb-1 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-muted active:scale-95 transition-transform disabled:opacity-40"
         >
           <Volume2 className="h-4 w-4" />
         </button>
@@ -133,6 +148,73 @@ function Bubble({
             c.text
           )}
         </p>
+        {c.final && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {mine && (
+              <button
+                type="button"
+                aria-label={`Edit: ${c.text}`}
+                className="inline-flex min-h-11 items-center gap-1 px-2 text-sm font-semibold"
+                onClick={() => {
+                  stopTTSPlayback();
+                  setDraft(c.text);
+                  setEditing(true);
+                }}
+              >
+                <Pencil aria-hidden className="h-4 w-4" /> Edit
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label={`Copy: ${c.text}`}
+              className="inline-flex min-h-11 items-center gap-1 px-2 text-sm font-semibold"
+              onClick={async () => {
+                try {
+                  if (!navigator.clipboard)
+                    throw new Error("Clipboard is unavailable on this device.");
+                  await navigator.clipboard.writeText(c.text);
+                  toast.success("Message copied");
+                } catch (error) {
+                  console.error("Could not copy message", error);
+                  toast.error("Could not copy. Select the message text to copy it.");
+                }
+              }}
+            >
+              <Copy aria-hidden className="h-4 w-4" /> Copy
+            </button>
+          </div>
+        )}
+        {editing && (
+          <form
+            className="mt-2 space-y-2"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!draft.trim()) {
+                toast.error("Your message cannot be empty.");
+                return;
+              }
+              editCaption(c.id, draft);
+              setEditing(false);
+            }}
+          >
+            <label className="block text-sm font-semibold">
+              Review your message
+              <textarea
+                autoFocus
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                className="mt-1 w-full rounded-xl border bg-background p-2 text-foreground"
+              />
+            </label>
+            <button className="min-h-11 px-3 font-semibold" type="submit">
+              Save changes
+            </button>
+            <button className="min-h-11 px-3" type="button" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -278,7 +360,9 @@ export function SpeakingIndicator() {
   return (
     <div className="mx-4 mb-2 flex items-center gap-3 self-center rounded-full bg-accent py-1.5 pl-4 pr-1.5 text-mint-ink shadow-[0_4px_16px_rgba(0,0,0,0.12)] animate-in fade-in">
       <SpeakingBars />
-      <span className="text-sm font-bold">Speaking out loud</span>
+      <span role="status" className="text-sm font-bold">
+        Speaking out loud
+      </span>
       <button
         onClick={stopTTSPlayback}
         className="inline-flex h-9 items-center gap-1.5 rounded-full bg-background px-3 text-sm font-bold text-foreground active:scale-95"
@@ -382,8 +466,7 @@ function BarToggle({
  * Conversation, laid out like home: camera fills the screen, controls float on top.
  * Top: close · status · agent. Bottom: one caption card + a dark glass control bar.
  */
-function Conversation() {
-  const { mode = "sign" } = Route.useSearch();
+export function Conversation({ mode = "sign" }: { mode?: ConversationMode }) {
   const speech = mode === "speech";
   const s = useSignify();
   const engine = useNativeBridge();
@@ -402,6 +485,11 @@ function Conversation() {
   }, [s.liveSign]);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
+  const [clearing, setClearing] = useState(false);
+  const [canUndoClear, setCanUndoClear] = useState(false);
+  useEffect(() => {
+    if (s.captions.length > 0) setCanUndoClear(false);
+  }, [s.captions]);
   // Whole conversation lives in the card; it scrolls and always jumps to the newest line
   useEffect(() => {
     const el = scroller.current;
@@ -454,10 +542,12 @@ function Conversation() {
   const status = speech
     ? engine.ttsPlaying
       ? "Speaking for you"
-      : hearing
-        ? "They're talking"
-        : (speechText ??
-          (engine.speechStatus?.onDevice ? "Listening · on this device" : "Listening"))
+      : (speechText ??
+        (hearing
+          ? "They're talking"
+          : engine.speechStatus?.onDevice
+            ? "Listening · on this device"
+            : "Listening"))
     : isNativeHost() && !engine.cameraActive
       ? "Camera off"
       : (recognitionStatus ??
@@ -491,7 +581,10 @@ function Conversation() {
       </div>
       <div
         aria-hidden
-        className={cn("absolute inset-0 -z-10", speech ? "bg-background" : "bg-neutral-900 native-camera-backdrop")}
+        className={cn(
+          "absolute inset-0 -z-10",
+          speech ? "bg-background" : "bg-neutral-900 native-camera-backdrop",
+        )}
       />
 
       <div className="relative z-10 flex flex-1 flex-col">
@@ -531,7 +624,7 @@ function Conversation() {
               icon={s.readAloud ? Volume2 : VolumeX}
               label={
                 s.readAloud
-                  ? "Voice on: your words are spoken out loud. Turn off"
+                  ? "Voice available: tap Speak on a reviewed message. Mute"
                   : "Voice off. Turn on"
               }
               onClick={() => {
@@ -539,7 +632,7 @@ function Conversation() {
                 toast(
                   s.readAloud
                     ? "Voice off: your words won't be spoken"
-                    : "Voice on: your words are spoken out loud",
+                    : "Voice available: review your message, then tap Speak",
                 );
               }}
             />
@@ -597,6 +690,39 @@ function Conversation() {
                 />
               ))}
             </div>
+            {s.captions.some((c) => c.speaker === "sam" && c.final) && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Review your message, then tap Speak. Saving does not play audio.
+              </p>
+            )}
+
+            {!empty && (
+              <AlertDialog open={clearing} onOpenChange={setClearing}>
+                <AlertDialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center gap-2 px-2 text-sm font-semibold"
+                  >
+                    <Trash2 aria-hidden className="h-4 w-4" /> Clear transcript
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogTitle>Clear transcript?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Clear all messages? Playback will stop. You can undo this.
+                  </AlertDialogDescription>
+                  <AlertDialogCancel>Keep messages</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      s.clearCaptions();
+                      setCanUndoClear(true);
+                    }}
+                  >
+                    Clear all messages
+                  </AlertDialogAction>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
 
             {/* Inline undo right after the agent fixes a word */}
             {s.lastFix && !s.pending && (
@@ -644,7 +770,7 @@ function Conversation() {
                     />
                     <button
                       type="submit"
-                      aria-label="Send"
+                      aria-label="Save message for review"
                       className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary active:scale-95"
                     >
                       <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
@@ -656,10 +782,22 @@ function Conversation() {
           </section>
         )}
 
+        {canUndoClear && (
+          <button
+            type="button"
+            className="mx-4 mb-2 min-h-11 self-center rounded-full bg-background px-4 font-semibold"
+            onClick={() => {
+              s.undo();
+              setCanUndoClear(false);
+            }}
+          >
+            Undo clear
+          </button>
+        )}
         {engine.ttsPlaying && <SpeakingIndicator />}
 
         {/* Hidden while typing: hands are on the keyboard, not signing */}
-        {!typing && (
+        {(!typing || speech) && (
           <ListeningLight
             light={speech}
             status={status}

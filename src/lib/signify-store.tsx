@@ -138,8 +138,11 @@ type Ctx = {
   recognitionStatus: RecognitionStatusPayload | null;
   readAloud: boolean;
   setReadAloud: (v: boolean) => void;
-  /** Add a finished sentence from the UI (typing, quick replies). Speaks it if read-aloud is on. */
+  /** Save a finished sentence for review. Playback always requires a separate explicit action. */
   say: (text: string, speaker?: Speaker, extra?: SayExtra) => void;
+  speakCaption: (id: number) => void;
+  editCaption: (id: number, text: string) => void;
+  clearCaptions: () => void;
   /** Caption text size multiplier (1 = default). */
   textScale: number;
   setTextScale: (v: number) => void;
@@ -180,7 +183,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   const [lastAction, setLastAction] = useState<Ctx["lastAction"]>(null);
   const [lastFix, setLastFix] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineStatus>("idle");
-  const [readAloud, setReadAloud] = useState(true);
+  const [readAloud, updateReadAloud] = useState(true);
   const [textScale, setTextScale] = useState(1);
   const [agentOpen, setAgentOpen] = useState(false);
   const [liveSign, setLiveSign] = useState<{ gloss: string; at: number } | null>(null);
@@ -261,6 +264,11 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   );
 
   const say = useCallback((text: string, speaker: Speaker = "sam", extra: SayExtra = {}) => {
+    text = text.trim();
+    if (!text) {
+      toast.error("There is no text to save.");
+      return;
+    }
     snapshot();
     setLastFix(null);
     setCaptions((cs) => {
@@ -268,9 +276,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       const base = last && last.speaker === speaker && !last.final ? cs.slice(0, -1) : cs;
       return [...base, { id: nextId++, speaker, text, final: true, ...extra }];
     });
-    const speak = speaker === "sam" && state.current.readAloud;
-    if (speak) triggerTTSPlayback(text);
-    setEngine(speak ? "speaking" : "listening");
+    setEngine("listening");
     setStep("translate");
     setLastAction({
       text:
@@ -279,6 +285,43 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
           : "Captioned the hearing person",
       reason: "Sentence complete",
     });
+  }, []);
+
+  const setReadAloud = useCallback((enabled: boolean) => {
+    state.current.readAloud = enabled;
+    updateReadAloud(enabled);
+    if (!enabled) stopTTSPlayback();
+  }, []);
+
+  const speakCaption = useCallback((id: number) => {
+    const caption = state.current.captions.find((c) => c.id === id);
+    if (!caption || caption.speaker !== "sam" || !caption.final || !caption.text.trim()) {
+      toast.error("Finish and review your message before speaking.");
+      return;
+    }
+    if (!state.current.readAloud) {
+      toast.error("Voice is muted. Turn it on before speaking.");
+      return;
+    }
+    triggerTTSPlayback(caption.text.trim());
+  }, []);
+
+  const editCaption = useCallback((id: number, text: string) => {
+    if (!text.trim()) {
+      toast.error("Your message cannot be empty.");
+      return;
+    }
+    snapshot();
+    stopTTSPlayback();
+    setCaptions((cs) =>
+      cs.map((c) => (c.id === id ? { ...c, text: text.trim(), final: true } : c)),
+    );
+  }, []);
+
+  const clearCaptions = useCallback(() => {
+    snapshot();
+    stopTTSPlayback();
+    setCaptions([]);
   }, []);
 
   const onSentenceTranslated = useCallback(
@@ -308,6 +351,13 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   const onNativeError = useCallback(({ feature, message }: NativeErrorPayload) => {
     console.error(`[NativeASLBridge: ${feature}]`, message);
     toast.error(message);
+    if (feature === "tts") {
+      ttsOn.current = false;
+      setTtsPlaying(false);
+      setTtsProgress(null);
+      setAudioLevel("tts", 0);
+      setEngine("listening");
+    }
   }, []);
 
   // The hearing person talking into the mic: partial words stream into one "Barista" bubble, then it finalizes.
@@ -329,7 +379,10 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       setAudioLevel("tts", 0);
     }
     if (!changed) return;
-    setTtsCue({ kind: isPlaying ? "start" : "end", key: Date.now() });
+    setTtsCue((previous) => ({
+      kind: isPlaying ? "start" : "end",
+      key: Math.max(Date.now(), (previous?.key ?? 0) + 1),
+    }));
     // Native plays haptics itself; in a browser, vibrate where supported so the start/end is still felt.
     if (!isNativeHost() && typeof navigator !== "undefined" && "vibrate" in navigator)
       navigator.vibrate(isPlaying ? 60 : [40, 60, 40]);
@@ -461,6 +514,8 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const reset = useCallback(() => {
+    stopTTSPlayback();
+    triggerSpeechRecognition(false);
     history.current = [];
     setCaptions([]);
     setPending(null);
@@ -494,6 +549,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       recognitionStatus,
       readAloud,
       setReadAloud,
+      speakCaption,
+      editCaption,
+      clearCaptions,
       awaitingTyped,
       fixTyped,
       cancelTyped,
@@ -547,6 +605,10 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       tracking,
       recognitionStatus,
       readAloud,
+      setReadAloud,
+      speakCaption,
+      editCaption,
+      clearCaptions,
       say,
       onSignDetected,
       onSentenceTranslated,

@@ -32,21 +32,52 @@ struct SpeechProgress: Equatable {
     let length: Int
 }
 
+protocol SpeechSynthesizing: AnyObject {
+    var delegate: AVSpeechSynthesizerDelegate? { get set }
+    func speak(_ utterance: AVSpeechUtterance)
+    @discardableResult func stopSpeaking(at boundary: AVSpeechBoundary) -> Bool
+}
+
+extension AVSpeechSynthesizer: SpeechSynthesizing {}
+
 final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
-    // Synthesizer access and handler state are confined to this queue.
-    private let speechQueue = DispatchQueue(label: "com.argussun.signifygesture.speech")
-    private let synthesizer = AVSpeechSynthesizer()
-    private let audioSession: SpeechAudioSession
+    // Keep AVSpeechSynthesizer and capture suppression ordered on the main queue.
+    private let speechQueue = DispatchQueue.main
+    private let synthesizer: SpeechSynthesizing
+    private let audioSession: SpeechAudioSessionManaging
     private var playbackStateHandler: ((Bool) -> Void)?
     private var progressHandler: ((SpeechProgress) -> Void)?
     private var activeUtterance: AVSpeechUtterance?
+    private var errorHandler: ((String) -> Void)?
+    private var interruptionObserver: NSObjectProtocol?
 
-    init(audioSession: SpeechAudioSession = .shared) {
+    init(
+        audioSession: SpeechAudioSessionManaging = SpeechAudioSession.shared,
+        synthesizer: SpeechSynthesizing = AVSpeechSynthesizer()
+    ) {
         self.audioSession = audioSession
+        self.synthesizer = synthesizer
         super.init()
         speechQueue.async { [weak self] in
             self?.synthesizer.delegate = self
         }
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+        ) { [weak self] note in
+            guard let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                  raw == AVAudioSession.InterruptionType.began.rawValue else { return }
+            self?.stop()
+        }
+    }
+
+    deinit {
+        if let interruptionObserver {
+            NotificationCenter.default.removeObserver(interruptionObserver)
+        }
+    }
+
+    func setErrorHandler(_ handler: @escaping (String) -> Void) {
+        speechQueue.async { [weak self] in self?.errorHandler = handler }
     }
 
     func setPlaybackStateChangeHandler(_ handler: ((Bool) -> Void)?) {
@@ -69,23 +100,42 @@ final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, @uncheck
 
         speechQueue.async { [weak self] in
             guard let self else { return }
+            guard let voice = Self.voice(for: voiceIdentifier) else {
+                self.errorHandler?("No speech voice is available. Install a voice in iOS Settings.")
+                return
+            }
             let utterance = AVSpeechUtterance(string: trimmedText)
-            utterance.voice = Self.voice(for: voiceIdentifier)
+            utterance.voice = voice
             // Honour the user's VoiceOver/Spoken Content voice and rate when they have set one.
             utterance.prefersAssistiveTechnologySettings = true
             // Replacing an utterance must not report a stop/start pair for the old one.
-            self.activeUtterance = utterance
-            if self.synthesizer.isSpeaking {
+            if self.activeUtterance != nil {
+                self.activeUtterance = nil
                 self.synthesizer.stopSpeaking(at: .immediate)
             }
-            self.audioSession.beginSpeaking()
+            do {
+                try self.audioSession.beginSpeaking()
+            } catch {
+                self.audioSession.endSpeaking()
+                self.playbackStateHandler?(false)
+                self.errorHandler?("Couldn't start spoken playback. \(error.localizedDescription)")
+                return
+            }
+            self.activeUtterance = utterance
+            // Mute the microphone before submitting audio, not after didStart.
+            self.playbackStateHandler?(true)
             self.synthesizer.speak(utterance)
         }
     }
 
     func stop() {
         speechQueue.async { [weak self] in
-            self?.synthesizer.stopSpeaking(at: .immediate)
+            guard let self, self.activeUtterance != nil else { return }
+            self.activeUtterance = nil
+            self.synthesizer.stopSpeaking(at: .immediate)
+            self.audioSession.endSpeaking()
+            SpeechHaptics.play(.stopped)
+            self.playbackStateHandler?(false)
         }
     }
 
@@ -93,7 +143,6 @@ final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, @uncheck
         speechQueue.async { [weak self] in
             guard let self, utterance === self.activeUtterance else { return }
             SpeechHaptics.play(.started)
-            self.playbackStateHandler?(true)
         }
     }
 
