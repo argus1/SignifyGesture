@@ -1,26 +1,26 @@
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
 
-/** Light / Dark / System (spec 1b + 10). Follows prefers-color-scheme unless the person picks one. */
+/** Light / Dark / System (spec 1b + 10). Opens in light; dark only when the person picks Dark (or System on a dark phone). */
 export type ThemeChoice = "system" | "light" | "dark";
 const KEY = "signify-theme";
 
 type Ctx = { choice: ThemeChoice; dark: boolean; setChoice: (c: ThemeChoice) => void };
-const ThemeCtx = createContext<Ctx>({ choice: "system", dark: false, setChoice: () => {} });
+const ThemeCtx = createContext<Ctx>({ choice: "light", dark: false, setChoice: () => {} });
 
 /** Runs before React so the page never flashes the wrong theme. */
-export const themeBootScript = `(function(){try{var c=localStorage.getItem('${KEY}')||'system';var d=c==='dark'||(c==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
+export const themeBootScript = `(function(){try{var c=localStorage.getItem('${KEY}')||'light';var d=c==='dark'||(c==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.classList.toggle('dark',d);}catch(e){}})();`;
 
 function read(): ThemeChoice {
   try {
     const v = localStorage.getItem(KEY);
-    return v === "light" || v === "dark" ? v : "system";
+    return v === "system" || v === "dark" ? v : "light";
   } catch {
-    return "system";
+    return "light";
   }
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [choice, setChoiceState] = useState<ThemeChoice>("system");
+  const [choice, setChoiceState] = useState<ThemeChoice>("light");
   const [systemDark, setSystemDark] = useState(false);
 
   useEffect(() => {
