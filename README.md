@@ -30,6 +30,18 @@ bun run dev
 Run frontend tests with `bun test` and create a production build with
 `bun run build`.
 
+For the team's HTTPS frontend on AWS EC2, see the
+[EC2 deployment guide](Docs/EC2_DEPLOYMENT.md). Its Node production target uses
+`npm run build:ec2`; `bash scripts/deploy-ec2.sh` publishes through SSM without
+public SSH access.
+
+## CI and agentic workflows
+
+See the [agentic workflows development plan](Docs/agentic-workflows.md) for the
+six bounded agents, acceptance checklists, deterministic CI, and activation
+requirements. Agents are disabled until explicitly enabled; code-writing agents
+also require a protected approval environment and only create draft PRs.
+
 ## Repeatable evaluation fixtures
 
 From the repository root, run the synthetic reporting check without a model,
@@ -47,3 +59,39 @@ These are **invented prediction records**, not model results or measurements of
 real signers/devices. See the [fixture protocol, expected results, consent and
 deletion rules, and limitations](Docs/ASL_translation_hackathon_plan.md#p07-fixture-protocol)
 before collecting or evaluating human samples.
+
+## Help assistant status
+
+The Help button on the main tab screens and conversation screen opens searchable,
+bundled instructions. It reads only the current screen and coarse camera,
+tracking, recognition and speech status; it does not read captions or send
+questions to a model. Closing it returns to the existing screen and conversation.
+The browser camera is a sample, not a live feed.
+
+Help can focus the camera or typing control without activating it. Its explicit
+screen links are limited to Messages, Community, and Memory, and are unavailable
+in a conversation so help cannot end it or discard an in-progress draft. A
+versioned, allowlisted action layer rejects unknown or stale targets; a model or
+native bridge is not yet allowed to invoke these actions.
+
+AI help is an integration stub, not an enabled provider. The intended policy is
+cloud primary with local AFM validation on a ready device, otherwise cloud
+validation; on offline or unstable connections a ready AFM would be primary
+without validation. A later cloud review must be explicit, not silently queued.
+Devices such as iPhone 15 Pro and iPads with M1 or later are candidates, not a
+readiness guarantee: OS, device configuration and model availability must be
+checked at runtime. The policy does not infer unavailable from unknown. Neither
+AFM readiness nor unstable connectivity is currently wired.
+On an offline device without local inference, AI help reports that it is offline.
+The neighboring HealthCoacher project informed the future provider contract:
+bounded requests and explicit provider failures belong behind the service, not
+in the web view. Its direct provider clients and embedded-key approach are not
+used here; OpenAI, Anthropic, and OpenRouter remain configuration placeholders.
+
+Offline launch requires the bundled-frontend work in #20; instructions can only
+be used when the frontend is already available. No provider credentials are
+needed for this stub. Before enabling cloud help, use Lovable's AI gateway
+through an authenticated HTTPS backend with separate informed consent, provider
+and retention disclosures, opt-out, cancellation, limits, and explicit errors.
+Do not embed provider keys in the app or browser. No real model, device,
+VoiceOver, offline-launch, latency, or cloud verification claim is made here.

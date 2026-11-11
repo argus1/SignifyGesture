@@ -17,7 +17,10 @@ export function BridgeSimulator() {
   const stop = useRef(false);
   const ref = useRef(s);
   ref.current = s;
-  const bridge = () => window.NativeASLBridge!;
+  const bridge = () => {
+    ref.current.markSimulation();
+    return window.NativeASLBridge!;
+  };
   const sign = (gloss: string, confidence: number, alternatives: Alternative[] = []) =>
     bridge().onSignDetected({ gloss, confidence, alternatives, isFinal: true, timestamp: Date.now() });
   const sentence = (naturalEnglish: string, rawGloss = naturalEnglish.toUpperCase()) => bridge().onSentenceTranslated({ rawGloss, naturalEnglish });
@@ -56,9 +59,14 @@ export function BridgeSimulator() {
       sign("OAT", 0.61, [{ gloss: "OAT-MILK", confidence: 0.28 }]);
       await waitForPick();
       await go(1500);
-      sentence("Hello! I'd like an iced oat milk latte, please.", "HELLO I WANT ICED OAT-MILK LATTE");
+      const spoken = "Hello! I'd like an iced oat milk latte, please.";
+      sentence(spoken, "HELLO I WANT ICED OAT-MILK LATTE");
       bridge().onTTSPlaybackState(true);
-      await go(3000);
+      // Like AVSpeechSynthesizer's willSpeakRange: one progress event per word, driving the read-along + waveform
+      for (const m of spoken.matchAll(/\S+/g)) {
+        bridge().onTTSProgress({ text: spoken, location: m.index ?? 0, length: m[0].length });
+        await go(330);
+      }
       bridge().onTTSPlaybackState(false);
       await hear("Sure! What size? Small, medium or large?");
       await go(3500);

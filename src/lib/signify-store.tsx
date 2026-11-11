@@ -6,24 +6,32 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
+import { createMemoryId, MemoryClient } from "@/lib/memory-client";
+import { conversationSchema, type SavedConversation } from "@/types/memory";
 import type {
   Alternative,
+  AudioLevelPayload,
   EngineStatusPayload,
   NativeASLBridge,
   NativeErrorPayload,
   RecognitionStatusPayload,
   SentenceTranslatedPayload,
   SignDetectedPayload,
+  SpeechRecognitionStatusPayload,
   SpeechTranscribedPayload,
   TrackingState,
+  TTSProgressPayload,
 } from "@/types/nativeBridge";
 import {
   isNativeHost,
+  stopTTSPlayback,
   triggerAvatarReplay,
   triggerCameraToggle,
+  triggerSpeechRecognition,
   triggerTTSPlayback,
 } from "@/lib/nativeBridge";
 
@@ -34,6 +42,8 @@ export type Speaker = "sam" | "other";
 /** gloss = the signs it came from (e.g. "HELLO I WANT ICED OAT-MILK LATTE"); typed = came from the keyboard, not signing. */
 export type Caption = {
   id: number;
+  memoryId: string;
+  timestamp: number;
   speaker: Speaker;
   text: string;
   final: boolean;
@@ -65,6 +75,33 @@ export function decideSign(
   return { kind: "repair" as const, text: sign.gloss };
 }
 
+/* ---------- Audio levels: ~15 Hz updates kept outside React state so only the waveform re-renders ---------- */
+
+type AudioLevels = { mic: number; tts: number };
+let audioLevels: AudioLevels = { mic: 0, tts: 0 };
+const audioListeners = new Set<() => void>();
+function setAudioLevel(source: keyof AudioLevels, level: number) {
+  const v = Math.max(0, Math.min(1, Number.isFinite(level) ? level : 0));
+  if (audioLevels[source] === v) return;
+  audioLevels = { ...audioLevels, [source]: v };
+  audioListeners.forEach((l) => l());
+}
+function subscribeAudioLevels(listener: () => void) {
+  audioListeners.add(listener);
+  return () => {
+    audioListeners.delete(listener);
+  };
+}
+const getAudioLevels = () => audioLevels;
+
+/** Live loudness (0–1) of the hearing person's mic and of the app's own voice, for the visual waveform. */
+export function useAudioLevels(): AudioLevels {
+  return useSyncExternalStore(subscribeAudioLevels, getAudioLevels, getAudioLevels);
+}
+
+/** Start / end of the app speaking aloud. `key` changes on every transition so the visual cue can replay. */
+export type TTSCue = { kind: "start" | "end"; key: number };
+
 /* ---------- Engine context: high-frequency native status, kept separate so it doesn't re-render conversation UI ---------- */
 
 type EngineCtx = {
@@ -72,10 +109,17 @@ type EngineCtx = {
   tracking: Tracking;
   latencyMs: number;
   ttsPlaying: boolean;
+  /** The word being spoken right now (for read-along highlighting). */
+  ttsProgress: TTSProgressPayload | null;
+  ttsCue: TTSCue | null;
+  /** Live-caption (mic) state; null until speech mode has been entered. */
+  speechStatus: SpeechRecognitionStatusPayload | null;
   devPreview: boolean;
   setDevPreview: (v: boolean) => void;
   triggerCameraToggle: typeof triggerCameraToggle;
   triggerTTSPlayback: typeof triggerTTSPlayback;
+  stopTTSPlayback: typeof stopTTSPlayback;
+  triggerSpeechRecognition: typeof triggerSpeechRecognition;
   triggerAvatarReplay: typeof triggerAvatarReplay;
 };
 const EngineContext = createContext<EngineCtx | null>(null);
@@ -83,6 +127,11 @@ const EngineContext = createContext<EngineCtx | null>(null);
 /* ---------- Conversation context: captions + agent ---------- */
 
 type Ctx = {
+  memory: MemoryClient;
+  conversationId: string;
+  memorySnapshot: (title: string, context: string, recallAllowed: boolean) => SavedConversation;
+  markSimulation: () => void;
+  simulated: boolean;
   captions: Caption[];
   pending: SignEvent | null;
   streak: number;
@@ -98,8 +147,11 @@ type Ctx = {
   recognitionStatus: RecognitionStatusPayload | null;
   readAloud: boolean;
   setReadAloud: (v: boolean) => void;
-  /** Add a finished sentence from the UI (typing, quick replies). Speaks it if read-aloud is on. */
+  /** Save a finished sentence for review. Playback always requires a separate explicit action. */
   say: (text: string, speaker?: Speaker, extra?: SayExtra) => void;
+  speakCaption: (id: number) => void;
+  editCaption: (id: number, text: string) => void;
+  clearCaptions: () => void;
   /** Caption text size multiplier (1 = default). */
   textScale: number;
   setTextScale: (v: number) => void;
@@ -127,8 +179,18 @@ type Ctx = {
 
 const SignifyCtx = createContext<Ctx | null>(null);
 let nextId = 1;
+const captionIdentity = () => ({
+  id: nextId++,
+  memoryId: createMemoryId(),
+  timestamp: Date.now(),
+});
 
 export function SignifyProvider({ children }: { children: ReactNode }) {
+  const [memory] = useState(() => new MemoryClient());
+  const [conversationId, setConversationId] = useState(createMemoryId);
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [simulated, setSimulated] = useState(false);
+  const correctionBaseline = useRef<Correction[]>([]);
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [pending, setPending] = useState<SignEvent | null>(null);
   const [streak, setStreak] = useState(0);
@@ -140,7 +202,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   const [lastAction, setLastAction] = useState<Ctx["lastAction"]>(null);
   const [lastFix, setLastFix] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineStatus>("idle");
-  const [readAloud, setReadAloud] = useState(true);
+  const [readAloud, updateReadAloud] = useState(true);
   const [textScale, setTextScale] = useState(1);
   const [agentOpen, setAgentOpen] = useState(false);
   const [liveSign, setLiveSign] = useState<{ gloss: string; at: number } | null>(null);
@@ -150,6 +212,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   const [recognitionStatus, setRecognitionStatus] = useState<RecognitionStatusPayload | null>(null);
   const [latencyMs, setLatencyMs] = useState(0);
   const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [ttsProgress, setTtsProgress] = useState<TTSProgressPayload | null>(null);
+  const [ttsCue, setTtsCue] = useState<TTSCue | null>(null);
+  const [speechStatus, setSpeechStatus] = useState<SpeechRecognitionStatusPayload | null>(null);
   const [devPreview, setDevPreview] = useState(false);
 
   const history = useRef<Snapshot[]>([]);
@@ -168,7 +233,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       if (last && last.speaker === "sam" && !last.final) {
         return [...cs.slice(0, -1), { ...last, text: `${last.text} ${word}`.trim() }];
       }
-      return [...cs, { id: nextId++, speaker: "sam", text: word, final: false }];
+      return [...cs, { ...captionIdentity(), speaker: "sam", text: word, final: false }];
     });
   }, []);
 
@@ -218,16 +283,19 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   );
 
   const say = useCallback((text: string, speaker: Speaker = "sam", extra: SayExtra = {}) => {
+    text = text.trim();
+    if (!text) {
+      toast.error("There is no text to save.");
+      return;
+    }
     snapshot();
     setLastFix(null);
     setCaptions((cs) => {
       const last = cs[cs.length - 1];
       const base = last && last.speaker === speaker && !last.final ? cs.slice(0, -1) : cs;
-      return [...base, { id: nextId++, speaker, text, final: true, ...extra }];
+      return [...base, { ...captionIdentity(), speaker, text, final: true, ...extra }];
     });
-    const speak = speaker === "sam" && state.current.readAloud;
-    if (speak) triggerTTSPlayback(text);
-    setEngine(speak ? "speaking" : "listening");
+    setEngine("listening");
     setStep("translate");
     setLastAction({
       text:
@@ -236,6 +304,43 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
           : "Captioned the hearing person",
       reason: "Sentence complete",
     });
+  }, []);
+
+  const setReadAloud = useCallback((enabled: boolean) => {
+    state.current.readAloud = enabled;
+    updateReadAloud(enabled);
+    if (!enabled) stopTTSPlayback();
+  }, []);
+
+  const speakCaption = useCallback((id: number) => {
+    const caption = state.current.captions.find((c) => c.id === id);
+    if (!caption || caption.speaker !== "sam" || !caption.final || !caption.text.trim()) {
+      toast.error("Finish and review your message before speaking.");
+      return;
+    }
+    if (!state.current.readAloud) {
+      toast.error("Voice is muted. Turn it on before speaking.");
+      return;
+    }
+    triggerTTSPlayback(caption.text.trim());
+  }, []);
+
+  const editCaption = useCallback((id: number, text: string) => {
+    if (!text.trim()) {
+      toast.error("Your message cannot be empty.");
+      return;
+    }
+    snapshot();
+    stopTTSPlayback();
+    setCaptions((cs) =>
+      cs.map((c) => (c.id === id ? { ...c, text: text.trim(), final: true } : c)),
+    );
+  }, []);
+
+  const clearCaptions = useCallback(() => {
+    snapshot();
+    stopTTSPlayback();
+    setCaptions([]);
   }, []);
 
   const onSentenceTranslated = useCallback(
@@ -265,6 +370,13 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   const onNativeError = useCallback(({ feature, message }: NativeErrorPayload) => {
     console.error(`[NativeASLBridge: ${feature}]`, message);
     toast.error(message);
+    if (feature === "tts") {
+      ttsOn.current = false;
+      setTtsPlaying(false);
+      setTtsProgress(null);
+      setAudioLevel("tts", 0);
+      setEngine("listening");
+    }
   }, []);
 
   // The hearing person talking into the mic: partial words stream into one "Barista" bubble, then it finalizes.
@@ -275,11 +387,50 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     setEngine(isFinal ? "listening" : "translating");
   }, []);
 
+  const ttsPulse = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTTSPlaybackState = useCallback((isPlaying: boolean) => {
+    const changed = ttsOn.current !== isPlaying;
     ttsOn.current = isPlaying;
     setTtsPlaying(isPlaying);
     setEngine(isPlaying ? "speaking" : "listening");
+    if (!isPlaying) {
+      setTtsProgress(null);
+      setAudioLevel("tts", 0);
+    }
+    if (!changed) return;
+    setTtsCue((previous) => ({
+      kind: isPlaying ? "start" : "end",
+      key: Math.max(Date.now(), (previous?.key ?? 0) + 1),
+    }));
+    // Native plays haptics itself; in a browser, vibrate where supported so the start/end is still felt.
+    if (!isNativeHost() && typeof navigator !== "undefined" && "vibrate" in navigator)
+      navigator.vibrate(isPlaying ? 60 : [40, 60, 40]);
   }, []);
+
+  // Each spoken word pulses the waveform so Deaf users can see the app's voice moving.
+  const onTTSProgress = useCallback((p: TTSProgressPayload) => {
+    if (!ttsOn.current) return;
+    setTtsProgress(p);
+    setAudioLevel("tts", 0.55 + Math.min(0.45, p.length / 20));
+    if (ttsPulse.current) clearTimeout(ttsPulse.current);
+    ttsPulse.current = setTimeout(() => setAudioLevel("tts", ttsOn.current ? 0.2 : 0), 180);
+  }, []);
+
+  const onAudioLevel = useCallback(({ source, level }: AudioLevelPayload) => {
+    setAudioLevel(source === "tts" ? "tts" : "mic", level);
+  }, []);
+
+  const onSpeechRecognitionStatusChange = useCallback((st: SpeechRecognitionStatusPayload) => {
+    setSpeechStatus(st);
+    if (st.state !== "listening") setAudioLevel("mic", 0);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (ttsPulse.current) clearTimeout(ttsPulse.current);
+    },
+    [],
+  );
 
   const addCaption = useCallback((speaker: Speaker, text: string, final = true) => {
     snapshot();
@@ -289,7 +440,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
         return [...cs.slice(0, -1), { ...last, text }];
       if (final && last && last.speaker === speaker && !last.final)
         return [...cs.slice(0, -1), { ...last, text, final: true }];
-      return [...cs, { id: nextId++, speaker, text, final }];
+      return [...cs, { ...captionIdentity(), speaker, text, final }];
     });
   }, []);
 
@@ -374,7 +525,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     snapshot();
     setCaptions((cs) => {
       const idx = [...cs].reverse().findIndex((c) => c.speaker === "sam");
-      if (idx === -1) return [...cs, { id: nextId++, speaker: "sam", text, final: true }];
+      if (idx === -1) return [...cs, { ...captionIdentity(), speaker: "sam", text, final: true }];
       const i = cs.length - 1 - idx;
       return cs.map((c, j) => (j === i ? { ...c, text, final: true } : c));
     });
@@ -382,6 +533,12 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const reset = useCallback(() => {
+    setConversationId(createMemoryId());
+    setStartedAt(Date.now());
+    setSimulated(false);
+    correctionBaseline.current = state.current.corrections;
+    stopTTSPlayback();
+    triggerSpeechRecognition(false);
     history.current = [];
     setCaptions([]);
     setPending(null);
@@ -398,8 +555,47 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     setTracking("idle");
   }, []);
 
+  const memorySnapshot = useCallback(
+    (title: string, context: string, recallAllowed: boolean): SavedConversation => {
+      if (simulated) throw new Error("Simulator conversations cannot be saved to personal memory.");
+      return conversationSchema.parse({
+        id: conversationId,
+        title,
+        context,
+        startedAt,
+        endedAt: Date.now(),
+        recallAllowed,
+        turns: state.current.captions
+          .filter((c) => c.final && c.text.trim())
+          .map((c, sequence) => ({
+            id: c.memoryId,
+            sequence,
+            speaker: c.speaker,
+            modality: c.speaker === "other" ? "speech" : c.typed ? "typed" : "signed",
+            text: c.text,
+            gloss: c.gloss,
+            timestamp: c.timestamp,
+          })),
+        corrections: state.current.corrections.filter(
+          (c) =>
+            !correctionBaseline.current.some(
+              (old) => old.heard === c.heard && old.meant === c.meant,
+            ),
+        ),
+      });
+    },
+    [conversationId, startedAt, simulated],
+  );
+  const markSimulation = useCallback(() => setSimulated(true), []);
+
   const value = useMemo<Ctx>(
     () => ({
+      memory,
+      conversationId,
+      memorySnapshot,
+      markSimulation,
+      simulated,
+      onMemoryResult: memory.receive,
       captions,
       pending,
       streak,
@@ -415,6 +611,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       recognitionStatus,
       readAloud,
       setReadAloud,
+      speakCaption,
+      editCaption,
+      clearCaptions,
       awaitingTyped,
       fixTyped,
       cancelTyped,
@@ -431,6 +630,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       onNativeError,
       onTTSPlaybackState,
       onSpeechTranscribed,
+      onSpeechRecognitionStatusChange,
+      onAudioLevel,
+      onTTSProgress,
       addCaption,
       resolveRepair,
       dismissTyping: () => {
@@ -445,6 +647,11 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       reset,
     }),
     [
+      memory,
+      conversationId,
+      memorySnapshot,
+      markSimulation,
+      simulated,
       awaitingTyped,
       fixTyped,
       cancelTyped,
@@ -465,6 +672,10 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       tracking,
       recognitionStatus,
       readAloud,
+      setReadAloud,
+      speakCaption,
+      editCaption,
+      clearCaptions,
       say,
       onSignDetected,
       onSentenceTranslated,
@@ -473,6 +684,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       onNativeError,
       onTTSPlaybackState,
       onSpeechTranscribed,
+      onSpeechRecognitionStatusChange,
+      onAudioLevel,
+      onTTSProgress,
       addCaption,
       resolveRepair,
       undo,
@@ -487,13 +701,18 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       tracking,
       latencyMs,
       ttsPlaying,
+      ttsProgress,
+      ttsCue,
+      speechStatus,
       devPreview,
       setDevPreview,
       triggerCameraToggle,
       triggerTTSPlayback,
+      stopTTSPlayback,
+      triggerSpeechRecognition,
       triggerAvatarReplay,
     }),
-    [cameraActive, tracking, latencyMs, ttsPlaying, devPreview],
+    [cameraActive, tracking, latencyMs, ttsPlaying, ttsProgress, ttsCue, speechStatus, devPreview],
   );
 
   useEffect(() => {
@@ -502,6 +721,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     window.NativeASLBridge = {
+      onMemoryResult: memory.receive,
       onSignDetected,
       onSentenceTranslated,
       onEngineStatusChange,
@@ -509,8 +729,12 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       onNativeError,
       onTTSPlaybackState,
       onSpeechTranscribed,
+      onSpeechRecognitionStatusChange,
+      onAudioLevel,
+      onTTSProgress,
     };
   }, [
+    memory,
     onSignDetected,
     onSentenceTranslated,
     onEngineStatusChange,
@@ -518,7 +742,12 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     onNativeError,
     onTTSPlaybackState,
     onSpeechTranscribed,
+    onSpeechRecognitionStatusChange,
+    onAudioLevel,
+    onTTSProgress,
   ]);
+
+  useEffect(() => () => memory.cancel(), [memory]);
 
   return (
     <EngineContext.Provider value={engineValue}>

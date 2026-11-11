@@ -21,6 +21,41 @@ struct NativeShellView: View {
             NativeWebView(coordinator: bridge)
                 .background(Color.clear)
                 .ignoresSafeArea()
+                // Microphone alert lives on a child view: SwiftUI can drop one of two
+                // .alert(item:) modifiers chained on the same view, which hid the camera rationale.
+                .alert(
+                    item: Binding(
+                        get: { bridge.microphonePermissionPrompt },
+                        set: { prompt in
+                            if prompt == nil {
+                                bridge.clearMicrophonePermissionPrompt()
+                            }
+                        }
+                    )
+                ) { prompt in
+                    switch prompt {
+                    case .rationale:
+                        Alert(
+                            title: Text(prompt.title),
+                            message: Text(prompt.message),
+                            primaryButton: .default(Text("Continue"), action: bridge.confirmMicrophonePermission),
+                            secondaryButton: .cancel(Text("Not now"), action: bridge.cancelSpeechCaptions)
+                        )
+                    case .denied:
+                        Alert(
+                            title: Text(prompt.title),
+                            message: Text(prompt.message),
+                            primaryButton: .default(Text("Open Settings"), action: bridge.openMicrophoneSettings),
+                            secondaryButton: .cancel(Text("Type instead"), action: bridge.cancelSpeechCaptions)
+                        )
+                    case .restricted:
+                        Alert(
+                            title: Text(prompt.title),
+                            message: Text(prompt.message),
+                            dismissButton: .default(Text("OK"), action: bridge.cancelSpeechCaptions)
+                        )
+                    }
+                }
         }
         .background(Color.black)
         .statusBarHidden(true)
@@ -57,7 +92,11 @@ struct NativeShellView: View {
             LandmarkFrameInspector(camera: bridge.camera)
         }
         .sheet(isPresented: $showsTrialRecorder) {
-            DebugTrialRecorderView(recorder: bridge.trialRecorder, cameraActive: bridge.cameraActive)
+            DebugTrialRecorderView(
+                recorder: bridge.trialRecorder,
+                authService: bridge.cognitoAuth,
+                cameraActive: bridge.cameraActive
+            )
         }
         #endif
         .alert(
@@ -102,6 +141,7 @@ struct NativeShellView: View {
         }
         .onDisappear {
             bridge.stopCamera()
+            bridge.stopSpeechCaptions()
         }
     }
 }

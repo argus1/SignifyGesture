@@ -3,6 +3,7 @@ import { ArrowLeft, Languages, MessageCircle, Users, BookOpen, type LucideIcon }
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { HelpButton } from "@/components/signify/HelpButton";
 
 export function Wordmark({ className }: { className?: string | undefined }) {
   return <span className={cn("font-display text-2xl font-black tracking-tight text-primary", className)}>Signify</span>;
@@ -32,7 +33,7 @@ export function TopBar({ back, onDark = false }: { back?: string; title?: string
         </Link>
       ) : <span />}
       <Link to="/home" className="justify-self-center" aria-label="Signify home"><Wordmark className={cn("transition-colors duration-500", onDark && "text-white drop-shadow-sm")} /></Link>
-      <span />
+      <HelpButton className="justify-self-end" />
     </header>
   );
 }
@@ -152,11 +153,11 @@ export function StatusPill({ children, dot = "bg-primary" }: { children: ReactNo
 
 /** Big page title for the tab pages (Messages, Community, Memory): same spot and size everywhere.
  *  action = optional round button on the right; sub = optional line under the title. */
-export function PageTitle({ title, action, sub }: { title: string; action?: ReactNode; sub?: ReactNode }) {
+export function PageTitle({ title, action, sub, helpFocusId }: { title: string; action?: ReactNode; sub?: ReactNode; helpFocusId?: string }) {
   return (
     <div className="px-6 pt-4">
       <div className="flex min-h-12 items-center justify-between gap-3">
-        <h1 className="headline text-[40px] leading-none">{title}</h1>
+        <h1 id={helpFocusId} tabIndex={helpFocusId ? -1 : undefined} className="headline text-[40px] leading-none">{title}</h1>
         {action}
       </div>
       {sub && <div className="mt-2">{sub}</div>}

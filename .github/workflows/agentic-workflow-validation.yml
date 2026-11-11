@@ -1,0 +1,62 @@
+name: Agentic workflow validation
+
+on:
+  push:
+    branches: [dev, main]
+    paths:
+      - ".github/aw/**"
+      - ".github/workflows/**"
+      - "scripts/test_agentic_workflows.py"
+      - "scripts/requirements-agentic-workflows.txt"
+  pull_request:
+    paths:
+      - ".github/aw/**"
+      - ".github/workflows/**"
+      - "scripts/test_agentic_workflows.py"
+      - "scripts/requirements-agentic-workflows.txt"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agentic-validation-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - name: Install workflow validation dependency
+        run: python3 -m pip install -r scripts/requirements-agentic-workflows.txt
+      - name: Check triggers, permissions, output scope, and compiled policy
+        run: python3 -B -m unittest discover -s scripts -p 'test_agentic_workflows.py'
+      - name: Install pinned agentic workflow compiler
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh extension install github/gh-aw --pin v1.2.2
+          gh aw version
+      - name: Compile strict sources and reject stale lock files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh aw compile --strict
+          git diff --exit-code -- '.github/workflows/agent-*.lock.yml' .github/aw/actions-lock.json
+      - name: Lint all Actions workflows
+        run: |
+          docker run --rm -v "$PWD:/workdir" -w /workdir \
+            rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667 \
+            -ignore 'property "workflow_(repository|sha|ref|file_path)" is not defined in object type' \
+            -ignore 'unexpected key "queue" for "concurrency" section' \
+            -ignore '^unexpected key "cache-mode" for "job" section' \
+            .github/workflows/*.yml

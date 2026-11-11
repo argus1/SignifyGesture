@@ -17,7 +17,7 @@ function Messages() {
   return (
     <div className="flex flex-1 flex-col">
       <TopBar />
-      <PageTitle title="Messages" action={
+      <PageTitle title="Messages" helpFocusId="help-destination-messages" action={
         <button aria-label="New message" onClick={() => toast("New message coming soon")}
           className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40">
           <PenSquare className="h-5 w-5" />

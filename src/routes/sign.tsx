@@ -10,14 +10,37 @@ import {
   Undo2,
   Hand,
   AudioLines,
+  Mic,
+  MicOff,
+  Square,
+  Pencil,
+  Copy,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
-import { useNativeBridge, useSignify, type Caption } from "@/lib/signify-store";
-import { isNativeHost, triggerTTSPlayback } from "@/lib/nativeBridge";
+import {
+  useAudioLevels,
+  useNativeBridge,
+  useSignify,
+  type Caption,
+  type TTSCue,
+} from "@/lib/signify-store";
+import { isNativeHost, stopTTSPlayback, triggerSpeechRecognition } from "@/lib/nativeBridge";
 import type { RecognitionStatusPayload } from "@/types/nativeBridge";
+import { captionsBlocked, speechStatusText } from "@/lib/speechStatus";
 import { CameraControl, CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
+import { HelpButton } from "@/components/signify/HelpButton";
 import { AgentChip, RepairCard, TypingSuggestion } from "@/components/signify/agent";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { seo } from "@/lib/seo";
@@ -29,8 +52,13 @@ export const Route = createFileRoute("/sign")({
     search["mode"] === "speech" ? { mode: "speech" } : {},
   head: () =>
     seo("Conversation", "Live sign ⇄ speech conversation with captions and agent repair."),
-  component: Conversation,
+  component: ConversationRoute,
 });
+
+function ConversationRoute() {
+  const { mode = "sign" } = Route.useSearch();
+  return <Conversation mode={mode} />;
+}
 
 /**
  * One line of the conversation, Google Translate style: your words on the right (mint), theirs on the left (gray).
@@ -39,10 +67,21 @@ export const Route = createFileRoute("/sign")({
  * ("HELLO I WANT ICED…") above the English. Tap an older line to see its signs again.
  * Your lines get a replay button so the other person can hear them again.
  */
-function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
+export function Bubble({
+  c,
+  latest,
+  spoken,
+}: {
+  c: Caption;
+  latest: boolean;
+  /** UTF-16 range of the word being spoken aloud right now (read-along). */
+  spoken?: { location: number; length: number } | null;
+}) {
   const mine = c.speaker === "sam";
-  const { textScale } = useSignify();
+  const { textScale, readAloud, speakCaption, editCaption } = useSignify();
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(c.text);
   const showGloss = !!c.gloss && (latest || open);
   const SourceIcon = c.typed ? Keyboard : Hand;
   const icon = mine ? (
@@ -56,9 +95,10 @@ function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
     <div className={cn("flex items-end gap-2", mine ? "justify-end" : "justify-start")}>
       {mine && c.final && (
         <button
-          onClick={() => triggerTTSPlayback(c.text)}
-          aria-label={`Say “${c.text}” again`}
-          className="mb-1 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-muted active:scale-95 transition-transform"
+          onClick={() => speakCaption(c.id)}
+          disabled={!readAloud || editing}
+          aria-label={`Speak: ${c.text}`}
+          className="mb-1 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-muted active:scale-95 transition-transform disabled:opacity-40"
         >
           <Volume2 className="h-4 w-4" />
         </button>
@@ -97,8 +137,85 @@ function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
               {icon}
             </span>
           )}
-          {c.text}
+          {spoken && spoken.location + spoken.length <= c.text.length ? (
+            <>
+              {c.text.slice(0, spoken.location)}
+              <mark className="rounded bg-mint-ink/25 px-0.5 text-inherit">
+                {c.text.slice(spoken.location, spoken.location + spoken.length)}
+              </mark>
+              {c.text.slice(spoken.location + spoken.length)}
+            </>
+          ) : (
+            c.text
+          )}
         </p>
+        {c.final && (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {mine && (
+              <button
+                type="button"
+                aria-label={`Edit: ${c.text}`}
+                className="inline-flex min-h-11 items-center gap-1 px-2 text-sm font-semibold"
+                onClick={() => {
+                  stopTTSPlayback();
+                  setDraft(c.text);
+                  setEditing(true);
+                }}
+              >
+                <Pencil aria-hidden className="h-4 w-4" /> Edit
+              </button>
+            )}
+            <button
+              type="button"
+              aria-label={`Copy: ${c.text}`}
+              className="inline-flex min-h-11 items-center gap-1 px-2 text-sm font-semibold"
+              onClick={async () => {
+                try {
+                  if (!navigator.clipboard)
+                    throw new Error("Clipboard is unavailable on this device.");
+                  await navigator.clipboard.writeText(c.text);
+                  toast.success("Message copied");
+                } catch (error) {
+                  console.error("Could not copy message", error);
+                  toast.error("Could not copy. Select the message text to copy it.");
+                }
+              }}
+            >
+              <Copy aria-hidden className="h-4 w-4" /> Copy
+            </button>
+          </div>
+        )}
+        {editing && (
+          <form
+            className="mt-2 space-y-2"
+            onClick={(event) => event.stopPropagation()}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (!draft.trim()) {
+                toast.error("Your message cannot be empty.");
+                return;
+              }
+              editCaption(c.id, draft);
+              setEditing(false);
+            }}
+          >
+            <label className="block text-sm font-semibold">
+              Review your message
+              <textarea
+                autoFocus
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                className="mt-1 w-full rounded-xl border bg-background p-2 text-foreground"
+              />
+            </label>
+            <button className="min-h-11 px-3 font-semibold" type="submit">
+              Save changes
+            </button>
+            <button className="min-h-11 px-3" type="button" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -159,6 +276,117 @@ function recognitionStatusText(state: RecognitionStatusPayload) {
   }
 }
 
+const WAVE_HEIGHTS = [18, 34, 24, 50, 30, 64, 40, 56, 28, 46, 22, 38, 16];
+
+/**
+ * Big speech-mode waveform. Natively it follows real loudness: the other person's mic while they talk,
+ * the app's own voice (pulsing per spoken word) while it speaks for you. Purely visual, so aria-hidden.
+ */
+export function VoiceWaveform({
+  hearing,
+  speaking,
+  dim,
+  native,
+}: {
+  hearing: boolean;
+  speaking: boolean;
+  dim: boolean;
+  native: boolean;
+}) {
+  const levels = useAudioLevels();
+  const level = speaking ? levels.tts : levels.mic;
+  const live = native ? level > 0.02 || hearing || speaking : hearing || speaking;
+  return (
+    <div
+      aria-hidden
+      data-testid="voice-waveform"
+      data-level={native ? level.toFixed(2) : undefined}
+      className={cn(
+        "flex h-24 items-center justify-center gap-1.5 transition-opacity duration-500",
+        live || !dim ? "opacity-100" : "opacity-40",
+      )}
+    >
+      {WAVE_HEIGHTS.map((hgt, i) => {
+        // Natively: center bars react most, edges least, so it reads as a voice rather than a meter.
+        const spread = 0.55 + 0.45 * Math.sin(((i + 1) / (WAVE_HEIGHTS.length + 1)) * Math.PI);
+        const height = native
+          ? Math.max(8, 8 + (hgt - 8) * Math.min(1, level * 1.6) * spread + (hgt - 8) * 0.12)
+          : live
+            ? hgt
+            : Math.max(8, hgt / 4);
+        return (
+          <span
+            key={i}
+            className={cn(
+              "w-2 rounded-full",
+              speaking ? "bg-mint-ink" : "bg-primary",
+              native ? "level-bar" : live && "voice-bar",
+            )}
+            style={{
+              height,
+              ...(native ? {} : { animationDelay: `${i * 90}ms`, transition: "height 300ms ease" }),
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** Small level-driven bars for the "speaking for you" pill. */
+function SpeakingBars() {
+  const { tts } = useAudioLevels();
+  const native = isNativeHost();
+  return (
+    <span aria-hidden className="flex h-5 items-center gap-[3px]">
+      {[10, 18, 13, 20, 11].map((h, i) => (
+        <span
+          key={i}
+          className={cn("w-[3px] rounded-full bg-mint-ink", native ? "level-bar" : "voice-bar")}
+          style={{
+            height: native ? Math.max(4, 4 + (h - 4) * Math.min(1, tts * 1.4)) : h,
+            ...(native ? {} : { animationDelay: `${i * 110}ms` }),
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Shown whenever the app is speaking out loud (both modes). Deaf users can't hear when to cut it off,
+ * so Stop is always one tap away.
+ */
+export function SpeakingIndicator() {
+  return (
+    <div className="mx-4 mb-2 flex items-center gap-3 self-center rounded-full bg-accent py-1.5 pl-4 pr-1.5 text-mint-ink shadow-[0_4px_16px_rgba(0,0,0,0.12)] animate-in fade-in">
+      <SpeakingBars />
+      <span role="status" className="text-sm font-bold">
+        Speaking out loud
+      </span>
+      <button
+        onClick={stopTTSPlayback}
+        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-background px-3 text-sm font-bold text-foreground active:scale-95"
+      >
+        <Square className="h-3.5 w-3.5 fill-current" aria-hidden /> Stop speaking
+      </button>
+    </div>
+  );
+}
+
+/** Edge glow when the app starts / stops speaking (pairs with native haptics; replays per cue). */
+function TTSCueFlash({ cue }: { cue: TTSCue | null }) {
+  if (!cue || Date.now() - cue.key > 1500) return null;
+  return (
+    <div
+      key={cue.key}
+      aria-hidden
+      data-testid="tts-cue"
+      className={cn("tts-cue", cue.kind === "start" ? "tts-cue-start" : "tts-cue-end")}
+    />
+  );
+}
+
 /** Tiny moving sound bars: the mic is hearing them right now. */
 function LiveBars() {
   return (
@@ -207,15 +435,18 @@ function BarToggle({
   on,
   onClick,
   light = false,
+  helpId,
 }: {
   icon: LucideIcon;
   label: string;
   on: boolean;
   onClick: () => void;
   light?: boolean;
+  helpId?: string;
 }) {
   return (
     <button
+      id={helpId}
       onClick={onClick}
       aria-pressed={on}
       className={cn(
@@ -239,8 +470,7 @@ function BarToggle({
  * Conversation, laid out like home: camera fills the screen, controls float on top.
  * Top: close · status · agent. Bottom: one caption card + a dark glass control bar.
  */
-function Conversation() {
-  const { mode = "sign" } = Route.useSearch();
+export function Conversation({ mode = "sign" }: { mode?: ConversationMode }) {
   const speech = mode === "speech";
   const s = useSignify();
   const engine = useNativeBridge();
@@ -259,6 +489,11 @@ function Conversation() {
   }, [s.liveSign]);
   const [typing, setTyping] = useState(false);
   const [draft, setDraft] = useState("");
+  const [clearing, setClearing] = useState(false);
+  const [canUndoClear, setCanUndoClear] = useState(false);
+  useEffect(() => {
+    if (s.captions.length > 0) setCanUndoClear(false);
+  }, [s.captions]);
   // Whole conversation lives in the card; it scrolls and always jumps to the newest line
   useEffect(() => {
     const el = scroller.current;
@@ -268,6 +503,23 @@ function Conversation() {
   const latestSigned = [...s.captions].reverse().find((c) => c.speaker === "sam" && c.gloss)?.id;
   const last = s.captions[s.captions.length - 1];
   const hearing = last?.speaker === "other" && !last.final; // mic is picking up the other person right now
+  // Live captions: the mic only runs in speech mode (permission is asked on first entry, natively)
+  const [micOn, setMicOn] = useState(true);
+  useEffect(() => {
+    if (!speech || !micOn) return;
+    triggerSpeechRecognition(true);
+    return () => triggerSpeechRecognition(false);
+  }, [speech, micOn]);
+  // Leaving the conversation stops anything still being spoken
+  useEffect(() => () => stopTTSPlayback(), []);
+  const readAlongId =
+    engine.ttsPlaying && engine.ttsProgress
+      ? [...s.captions]
+          .reverse()
+          .find((c) => c.speaker === "sam" && c.text === engine.ttsProgress?.text)?.id
+      : undefined;
+  const speechBlocked = captionsBlocked(engine.speechStatus);
+  const speechText = speechStatusText(engine.speechStatus, micOn);
   // Speech mode in the browser: the other person "talks" a moment after you arrive (natively the mic does this)
   useEffect(() => {
     if (!speech || s.captions.length > 0 || isNativeHost()) return;
@@ -292,11 +544,14 @@ function Conversation() {
   }, [speech]); // eslint-disable-line react-hooks/exhaustive-deps
   const recognitionStatus = s.recognitionStatus ? recognitionStatusText(s.recognitionStatus) : null;
   const status = speech
-    ? hearing
-      ? "They're talking"
-      : engine.ttsPlaying
-        ? "Speaking for you"
-        : "Listening"
+    ? engine.ttsPlaying
+      ? "Speaking for you"
+      : (speechText ??
+        (hearing
+          ? "They're talking"
+          : engine.speechStatus?.onDevice
+            ? "Listening · on this device"
+            : "Listening"))
     : isNativeHost() && !engine.cameraActive
       ? "Camera off"
       : (recognitionStatus ??
@@ -314,6 +569,7 @@ function Conversation() {
 
   return (
     <div className="relative flex flex-1 flex-col">
+      <TTSCueFlash cue={engine.ttsCue} />
       {/* Full-screen camera with the same scrims as home (speech mode: plain white, like home's Speech side) */}
       {speech && <div aria-hidden className="absolute inset-0 bg-background" />}
       <div className={cn("absolute inset-0", speech && "hidden")}>
@@ -329,19 +585,46 @@ function Conversation() {
       </div>
       <div
         aria-hidden
-        className={cn("absolute inset-0 -z-10", speech ? "bg-background" : "bg-neutral-900 native-camera-backdrop")}
+        className={cn(
+          "absolute inset-0 -z-10",
+          speech ? "bg-background" : "bg-neutral-900 native-camera-backdrop",
+        )}
       />
 
       <div className="relative z-10 flex flex-1 flex-col">
         {/* Top row mirrors home's header: left · center · right */}
         <header className="grid grid-cols-[44px_1fr_44px] items-start px-4 pt-4 pb-2">
-          <GlassButton
-            light={speech}
-            icon={ChevronLeft}
-            label={empty ? "Back" : "End conversation and see recap"}
-            onClick={() => nav({ to: empty ? "/home" : "/recap" })}
-          />
-          <span />
+          <div className="flex flex-col items-center gap-2">
+            <GlassButton
+              light={speech}
+              icon={ChevronLeft}
+              label={empty ? "Back" : "End conversation and see recap"}
+              onClick={() => nav({ to: empty ? "/home" : "/recap" })}
+            />
+            {speech && (
+              <GlassButton
+                light
+                icon={micOn && !speechBlocked ? Mic : MicOff}
+                label={
+                  !micOn
+                    ? "Mic off. Start listening"
+                    : speechBlocked
+                      ? "Live captions unavailable. Try again"
+                      : "Mic on: their speech becomes captions. Stop listening"
+                }
+                onClick={() => {
+                  if (micOn && speechBlocked) triggerSpeechRecognition(true);
+                  else setMicOn(!micOn);
+                }}
+              />
+            )}
+          </div>
+          <div className="flex justify-center">
+            <HelpButton
+              className={speech ? "bg-muted" : undefined}
+              onStopListening={speech && micOn ? () => setMicOn(false) : undefined}
+            />
+          </div>
           {/* Right column: agent, and under it the voice on/off (a setting, not a mode) */}
           <div className="flex flex-col items-center gap-2">
             <AgentChip {...(speech ? { className: "bg-muted" } : {})} />
@@ -350,7 +633,7 @@ function Conversation() {
               icon={s.readAloud ? Volume2 : VolumeX}
               label={
                 s.readAloud
-                  ? "Voice on: your words are spoken out loud. Turn off"
+                  ? "Voice available: tap Speak on a reviewed message. Mute"
                   : "Voice off. Turn on"
               }
               onClick={() => {
@@ -358,7 +641,7 @@ function Conversation() {
                 toast(
                   s.readAloud
                     ? "Voice off: your words won't be spoken"
-                    : "Voice on: your words are spoken out loud",
+                    : "Voice available: review your message, then tap Speak",
                 );
               }}
             />
@@ -369,25 +652,12 @@ function Conversation() {
         {/* Center: hand cue (sign mode) or voice bars (speech mode), same as the home screen */}
         <div className="relative flex flex-1 items-center justify-center">
           {speech ? (
-            <div
-              aria-hidden
-              className={cn(
-                "flex h-24 items-center justify-center gap-1.5 transition-opacity duration-500",
-                hearing || empty ? "opacity-100" : "opacity-40",
-              )}
-            >
-              {[18, 34, 24, 50, 30, 64, 40, 56, 28, 46, 22, 38, 16].map((hgt, i) => (
-                <span
-                  key={i}
-                  className={cn("w-2 rounded-full bg-primary", hearing && "voice-bar")}
-                  style={{
-                    height: hearing ? hgt : Math.max(8, hgt / 4),
-                    animationDelay: `${i * 90}ms`,
-                    transition: "height 300ms ease",
-                  }}
-                />
-              ))}
-            </div>
+            <VoiceWaveform
+              hearing={hearing}
+              speaking={engine.ttsPlaying}
+              dim={!empty}
+              native={isNativeHost()}
+            />
           ) : (
             <div
               className={cn(
@@ -421,9 +691,47 @@ function Conversation() {
               className="max-h-56 space-y-3 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_20px)] pt-2"
             >
               {s.captions.map((c) => (
-                <Bubble key={c.id} c={c} latest={c.id === latestSigned} />
+                <Bubble
+                  key={c.id}
+                  c={c}
+                  latest={c.id === latestSigned}
+                  spoken={c.id === readAlongId ? engine.ttsProgress : null}
+                />
               ))}
             </div>
+            {s.captions.some((c) => c.speaker === "sam" && c.final) && (
+              <p className="mt-2 text-sm text-muted-foreground">
+                Review your message, then tap Speak. Saving does not play audio.
+              </p>
+            )}
+
+            {!empty && (
+              <AlertDialog open={clearing} onOpenChange={setClearing}>
+                <AlertDialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex min-h-11 items-center gap-2 px-2 text-sm font-semibold"
+                  >
+                    <Trash2 aria-hidden className="h-4 w-4" /> Clear transcript
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogTitle>Clear transcript?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Clear all messages? Playback will stop. You can undo this.
+                  </AlertDialogDescription>
+                  <AlertDialogCancel>Keep messages</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      s.clearCaptions();
+                      setCanUndoClear(true);
+                    }}
+                  >
+                    Clear all messages
+                  </AlertDialogAction>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
 
             {/* Inline undo right after the agent fixes a word */}
             {s.lastFix && !s.pending && (
@@ -471,7 +779,7 @@ function Conversation() {
                     />
                     <button
                       type="submit"
-                      aria-label="Send"
+                      aria-label="Save message for review"
                       className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary active:scale-95"
                     >
                       <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
@@ -483,13 +791,31 @@ function Conversation() {
           </section>
         )}
 
+        {canUndoClear && (
+          <button
+            type="button"
+            className="mx-4 mb-2 min-h-11 self-center rounded-full bg-background px-4 font-semibold"
+            onClick={() => {
+              s.undo();
+              setCanUndoClear(false);
+            }}
+          >
+            Undo clear
+          </button>
+        )}
+        {engine.ttsPlaying && <SpeakingIndicator />}
+
         {/* Hidden while typing: hands are on the keyboard, not signing */}
-        {!typing && (
+        {(!typing || speech) && (
           <ListeningLight
             light={speech}
             status={status}
             busy={hearing || signingNow || engine.ttsPlaying}
-            waiting={!speech && (!!s.pending || engine.tracking === "lost")}
+            waiting={
+              speech
+                ? engine.speechStatus?.state === "preparing"
+                : !!s.pending || engine.tracking === "lost"
+            }
           />
         )}
 
@@ -521,6 +847,7 @@ function Conversation() {
             light={speech}
             icon={Keyboard}
             label="Type"
+            helpId="help-control-type"
             on={typing}
             onClick={() => {
               if (typing) s.cancelTyped();

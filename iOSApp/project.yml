@@ -10,6 +10,11 @@ configs:
   Debug: debug
   Release: release
 
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: 7.0.0
+
 configFiles:
   Debug: Config/Frontend.xcconfig
   Release: Config/Frontend.xcconfig
@@ -17,7 +22,7 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: 5.0
-    PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture
+    PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture2
     MARKETING_VERSION: 0.1.0
     CURRENT_PROJECT_VERSION: 1
     CODE_SIGN_STYLE: Automatic
@@ -43,24 +48,47 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+    dependencies:
+      - package: GRDB
+        product: GRDB
+      - target: SignifyMessages
+        embed: true
     settings:
       base:
         PRODUCT_NAME: SignifyGesture
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: SignifyGesture
         INFOPLIST_KEY_NSCameraUsageDescription: "Camera access enables on-device hand-pose tracking for the demo. Video is not saved or sent to the web UI."
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "The microphone lets Signify show live captions of the person you are talking with. Audio is not saved."
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "Speech recognition turns the other person's speech into captions, on this device when supported. Audio is not saved."
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: "Local network access can load the team’s development UI from your computer."
         INFOPLIST_KEY_SIGNIFY_FRONTEND_URL: "$(SIGNIFY_FRONTEND_URL)"
         CODE_SIGN_STYLE: Automatic
+
+  SignifyMessages:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MessagesExtension
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: SignifyMessages
+        PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture2.messages
+        INFOPLIST_FILE: MessagesExtension/Info.plist
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
 
   SignifyGestureTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - path: Tests
+      - path: MessagesExtension/MessageDraft.swift
     dependencies:
       - target: SignifyGesture
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture2.tests
         GENERATE_INFOPLIST_FILE: YES

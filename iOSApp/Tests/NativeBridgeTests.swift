@@ -33,7 +33,8 @@ final class NativeBridgeTests: XCTestCase, WKNavigationDelegate, WKScriptMessage
         try await evaluate("""
         window.NativeASLBridge = {
           onEngineStatusChange: payload => window.webkit.messageHandlers.testEvents.postMessage({method: "status", payload}),
-          onNativeError: payload => window.webkit.messageHandlers.testEvents.postMessage({method: "error", payload})
+          onNativeError: payload => window.webkit.messageHandlers.testEvents.postMessage({method: "error", payload}),
+          onSpeechRecognitionStatusChange: payload => window.webkit.messageHandlers.testEvents.postMessage({method: "speechStatus", payload})
         };
         \(NativeBridgeCoordinator.webBridgeBootstrap)
         """, in: webView)
@@ -86,6 +87,36 @@ final class NativeBridgeTests: XCTestCase, WKNavigationDelegate, WKScriptMessage
         let payload = try XCTUnwrap(event["payload"] as? [String: Any])
         XCTAssertEqual(payload["feature"] as? String, "camera")
         XCTAssertEqual(payload["message"] as? String, "Missing camera active state.")
+    }
+
+    func testStoppingSpeechRecognitionReportsIdleCaptions() async throws {
+        let event = try await send("window.NativeASLBridge.triggerSpeechRecognition(false);")
+        XCTAssertEqual(event["method"] as? String, "speechStatus")
+        let payload = try XCTUnwrap(event["payload"] as? [String: Any])
+        XCTAssertEqual(payload["state"] as? String, "idle")
+    }
+
+    func testMalformedSpeechRecognitionCommandReturnsActionableError() async throws {
+        let event = try await send("""
+        window.webkit.messageHandlers.aslBridge.postMessage({type: "triggerSpeechRecognition", active: "yes"});
+        """)
+        XCTAssertEqual(event["method"] as? String, "error")
+        let payload = try XCTUnwrap(event["payload"] as? [String: Any])
+        XCTAssertEqual(payload["feature"] as? String, "speech")
+        XCTAssertEqual(payload["message"] as? String, "Missing listening state.")
+    }
+
+    func testSpeakingBlankTextReturnsTTSError() async throws {
+        let event = try await send("window.NativeASLBridge.triggerTTSPlayback('   ');")
+        XCTAssertEqual(event["method"] as? String, "error")
+        let payload = try XCTUnwrap(event["payload"] as? [String: Any])
+        XCTAssertEqual(payload["feature"] as? String, "tts")
+        XCTAssertEqual(payload["message"] as? String, "There is no text to speak.")
+    }
+
+    func testBootstrapExposesSpeechCommands() {
+        XCTAssertTrue(NativeBridgeCoordinator.webBridgeBootstrap.contains("bridge.triggerSpeechRecognition"))
+        XCTAssertTrue(NativeBridgeCoordinator.webBridgeBootstrap.contains("bridge.stopTTSPlayback"))
     }
 
     func testLandmarkFrameNormalizesMirroredKnownPoseAndOrdersHandsBySide() {

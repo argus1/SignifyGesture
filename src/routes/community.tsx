@@ -33,7 +33,7 @@ function Community() {
   return (
     <div className="flex flex-1 flex-col">
       <TopBar />
-      <PageTitle title="Community" />
+      <PageTitle title="Community" helpFocusId="help-destination-community" />
       {/* This week: big photo cards you swipe through */}
       <section className="mt-5">
         <h2 className="px-6 text-sm font-bold text-muted-foreground">This week</h2>

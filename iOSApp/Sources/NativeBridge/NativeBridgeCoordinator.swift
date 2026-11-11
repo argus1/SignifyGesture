@@ -4,6 +4,7 @@ import Foundation
 import QuartzCore
 import UIKit
 import WebKit
+import OSLog
 
 enum CameraPermissionPrompt: String, Identifiable {
     case rationale
@@ -40,13 +41,45 @@ enum CameraPermissionPrompt: String, Identifiable {
     }
 }
 
+enum MicrophonePermissionPrompt: String, Identifiable {
+    case rationale
+    case denied
+    case restricted
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .rationale:
+            return "Live captions"
+        case .denied:
+            return "Microphone or speech access is off"
+        case .restricted:
+            return "Speech recognition is restricted"
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .rationale:
+            return "Signify listens to the person you're talking with and shows their words as captions. Speech is transcribed on this device when possible, and audio is not saved. Continue to the iOS permission prompts?"
+        case .denied:
+            return "Allow microphone and speech recognition in Settings to see live captions. You can still type and use spoken playback."
+        case .restricted:
+            return "Speech recognition is restricted by this device's settings. You can still type and use spoken playback."
+        }
+    }
+}
+
 final class NativeBridgeCoordinator: NSObject, ObservableObject {
     static let webBridgeBootstrap = """
     (() => {
       const bridge = window.NativeASLBridge = window.NativeASLBridge || {};
       const post = (type, payload) => window.webkit.messageHandlers.aslBridge.postMessage({ type, ...payload });
       bridge.triggerCameraToggle = bridge.triggerCameraToggle || ((active) => post("triggerCameraToggle", { active }));
+      bridge.triggerSpeechRecognition = bridge.triggerSpeechRecognition || ((active) => post("triggerSpeechRecognition", { active }));
       bridge.triggerTTSPlayback = bridge.triggerTTSPlayback || ((text, voiceId) => post("triggerTTSPlayback", { text, voiceId }));
+      bridge.stopTTSPlayback = bridge.stopTTSPlayback || (() => post("stopTTSPlayback", {}));
       bridge.triggerAvatarReplay = bridge.triggerAvatarReplay || ((glossSequence) => post("triggerAvatarReplay", { glossSequence }));
       bridge.syncSessionToAWS = bridge.syncSessionToAWS || ((sessionData) => post("syncSessionToAWS", { sessionData }));
     })();
@@ -55,11 +88,16 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     let camera = CameraCaptureService()
     #if DEBUG
     let trialRecorder = DebugTrialRecorder()
+    @MainActor lazy var cognitoAuth = CognitoAuthService()
     #endif
     private let speech = NativeSpeechService()
+    private let transcription = LiveSpeechTranscriptionService()
     private let classifier: any SignInferenceProvider = CoreMLSignClassifier()
     private let avatarRuntime: AvatarRuntime = UnavailableAvatarRuntime()
     private weak var webView: WKWebView?
+    private let memoryQueue = DispatchQueue(label: "com.argussun.signifygesture.memory", qos: .userInitiated)
+    private var memoryStore: ConversationMemory?
+    private var navigationGeneration = 0
 
     private let inferenceStateQueue = DispatchQueue(
         label: "com.argussun.signifygesture.inference-state",
@@ -70,6 +108,8 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     @Published private(set) var cameraActive = false
     @Published private(set) var cameraStarting = false
     @Published private(set) var cameraPermissionPrompt: CameraPermissionPrompt?
+    @Published private(set) var microphonePermissionPrompt: MicrophonePermissionPrompt?
+    private var speechCaptionsPending = false
     private var frontendLoadFailed = false
     private var recentFrames: [[Float]] = []
     private var recentFrameTimes: [TimeInterval] = []
@@ -105,7 +145,30 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
             self?.emit(method: "onNativeError", payload: ["feature": "camera", "message": message])
         }
         speech.setPlaybackStateChangeHandler { [weak self] isPlaying in
+            self?.transcription.setPlaybackActive(isPlaying)
             self?.emit(method: "onTTSPlaybackState", payload: isPlaying)
+        }
+        speech.setErrorHandler { [weak self] message in
+            self?.emit(method: "onNativeError", payload: ["feature": "tts", "message": message])
+        }
+        speech.setProgressHandler { [weak self] progress in
+            self?.emit(
+                method: "onTTSProgress",
+                payload: ["text": progress.text, "location": progress.location, "length": progress.length]
+            )
+        }
+        transcription.onStatusChange = { [weak self] state, message, onDevice in
+            var payload: [String: Any] = ["state": state.rawValue]
+            if let message { payload["message"] = message }
+            if let onDevice { payload["onDevice"] = onDevice }
+            self?.emit(method: "onSpeechRecognitionStatusChange", payload: payload)
+        }
+        transcription.onTranscript = { [weak self] text, isFinal in
+            self?.emit(method: "onSpeechTranscribed", payload: ["text": text, "isFinal": isFinal])
+        }
+        transcription.onAudioLevel = { [weak self] level in
+            let rounded = (Double(level) * 100).rounded() / 100
+            self?.emit(method: "onAudioLevel", payload: ["source": "mic", "level": rounded])
         }
     }
 
@@ -286,7 +349,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         emit(method: "onRecognitionStatusChange", payload: payload)
     }
 
-    private func emit(method: String, payload: Any) {
+    private func emit(method: String, payload: Any, memoryGeneration: Int? = nil) {
         guard JSONSerialization.isValidJSONObject([payload]),
               let data = try? JSONSerialization.data(withJSONObject: [payload]),
               let json = String(data: data, encoding: .utf8) else {
@@ -295,7 +358,13 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         let fragment = String(json.dropFirst().dropLast())
         let script = "window.NativeASLBridge && window.NativeASLBridge.\(method) && window.NativeASLBridge.\(method)(\(fragment));"
         DispatchQueue.main.async { [weak self] in
-            self?.webView?.evaluateJavaScript(script)
+            guard let self else { return }
+            if let memoryGeneration {
+                guard self.navigationGeneration == memoryGeneration,
+                      Self.trustsMemoryOrigin(frontend: self.memoryFrontendURL, source: self.webView?.url,
+                                              isMainFrame: true) else { return }
+            }
+            self.webView?.evaluateJavaScript(script)
         }
     }
 
@@ -357,6 +426,77 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         cameraPermissionPrompt = nil
     }
 
+    func requestSpeechCaptions() {
+        switch LiveSpeechTranscriptionService.permission {
+        case .granted:
+            speechCaptionsPending = false
+            transcription.start()
+        case .undetermined:
+            speechCaptionsPending = true
+            microphonePermissionPrompt = .rationale
+            emit(
+                method: "onSpeechRecognitionStatusChange",
+                payload: ["state": SpeechCaptionState.preparing.rawValue, "message": "Waiting for microphone permission."]
+            )
+        case .denied:
+            speechCaptionsPending = true
+            microphonePermissionPrompt = .denied
+            emitSpeechPermissionState(.denied)
+        case .restricted:
+            speechCaptionsPending = false
+            microphonePermissionPrompt = .restricted
+            emitSpeechPermissionState(.restricted)
+        }
+    }
+
+    func confirmMicrophonePermission() {
+        microphonePermissionPrompt = nil
+        LiveSpeechTranscriptionService.requestPermission { [weak self] permission in
+            guard let self, self.speechCaptionsPending else { return }
+            switch permission {
+            case .granted:
+                self.speechCaptionsPending = false
+                self.transcription.start()
+            case .denied, .undetermined:
+                self.speechCaptionsPending = false
+                self.emitSpeechPermissionState(.denied)
+            case .restricted:
+                self.speechCaptionsPending = false
+                self.emitSpeechPermissionState(.restricted)
+            }
+        }
+    }
+
+    func openMicrophoneSettings() {
+        microphonePermissionPrompt = nil
+        guard let settingsURL = URL(string: UIApplication.openSettingsURLString) else { return }
+        UIApplication.shared.open(settingsURL)
+    }
+
+    func cancelSpeechCaptions() {
+        microphonePermissionPrompt = nil
+        guard speechCaptionsPending else { return }
+        speechCaptionsPending = false
+        emitSpeechPermissionState(.denied)
+    }
+
+    func clearMicrophonePermissionPrompt() {
+        microphonePermissionPrompt = nil
+    }
+
+    func stopSpeechCaptions() {
+        speechCaptionsPending = false
+        microphonePermissionPrompt = nil
+        transcription.stop()
+    }
+
+    private func emitSpeechPermissionState(_ state: SpeechCaptionState) {
+        let message = state == .restricted
+            ? MicrophonePermissionPrompt.restricted.message
+            : "Live captions are unavailable without microphone and speech recognition access. You can still type."
+        emit(method: "onSpeechRecognitionStatusChange", payload: ["state": state.rawValue, "message": message])
+    }
+
     func stopCamera() {
         cameraPermissionPrompt = nil
         cameraActivationPending = false
@@ -364,6 +504,11 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     func sceneDidBecomeActive() {
+        transcription.resume()
+        if speechCaptionsPending, microphonePermissionPrompt == nil,
+           LiveSpeechTranscriptionService.permission == .granted {
+            requestSpeechCaptions()
+        }
         if cameraActivationPending {
             requestCameraActivation()
             return
@@ -374,6 +519,8 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     func sceneDidEnterBackground() {
+        transcription.suspend(reason: "Captions paused while Signify is in the background.")
+        speech.stop()
         guard cameraActive || cameraStarting else { return }
         cameraActivationPending = false
         stopCameraCapture()
@@ -471,6 +618,16 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
                 return
             }
             handleCameraToggle(active: active)
+        case "triggerSpeechRecognition":
+            guard let active = payload["active"] as? Bool else {
+                emit(method: "onNativeError", payload: ["feature": "speech", "message": "Missing listening state."])
+                return
+            }
+            if active {
+                requestSpeechCaptions()
+            } else {
+                stopSpeechCaptions()
+            }
         case "triggerTTSPlayback":
             guard let text = payload["text"] as? String else {
                 emit(method: "onNativeError", payload: ["feature": "tts", "message": "Missing text to speak."])
@@ -506,6 +663,64 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         }
     }
 
+    static func trustsMemoryOrigin(frontend: URL?, source: URL?, isMainFrame: Bool) -> Bool {
+        guard isMainFrame, let frontend, let source,
+              ["https", "http"].contains(frontend.scheme?.lowercased() ?? ""),
+              frontend.scheme?.lowercased() == source.scheme?.lowercased(),
+              frontend.host?.lowercased() == source.host?.lowercased(),
+              frontend.host != nil else { return false }
+        let defaultPort = frontend.scheme?.lowercased() == "https" ? 443 : 80
+        return (frontend.port ?? defaultPort) == (source.port ?? defaultPort)
+    }
+
+    private var memoryFrontendURL: URL? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "SIGNIFY_FRONTEND_URL") as? String else { return nil }
+        return validatedFrontendURL(value)
+    }
+
+    private func handleMemory(_ message: WKScriptMessage, body: [String: Any]) {
+        let origin = message.frameInfo.securityOrigin
+        let port = origin.port == 0 ? "" : ":\(origin.port)"
+        let source = URL(string: "\(origin.protocol)://\(origin.host)\(port)")
+        guard Self.trustsMemoryOrigin(frontend: memoryFrontendURL, source: source,
+                                     isMainFrame: message.frameInfo.isMainFrame),
+              Self.trustsMemoryOrigin(frontend: memoryFrontendURL, source: webView?.url, isMainFrame: true) else {
+            Logger(subsystem: "com.argussun.signifygesture", category: "memory").error("memory:untrusted_origin")
+            return
+        }
+        guard let requestID = body["requestId"] as? String, UUID(uuidString: requestID) != nil else {
+            emit(method: "onNativeError", payload: ["feature": "memory", "message": MemoryFailure.invalidRequest.message])
+            return
+        }
+        let generation = navigationGeneration
+        memoryQueue.async { [weak self] in
+            guard let self else { return }
+            let response: [String: Any]
+            do {
+                let bytes = try JSONSerialization.data(withJSONObject: body)
+                guard bytes.count <= 2_000_000 else { throw MemoryFailure.invalidRequest }
+                let request = try JSONDecoder().decode(MemoryRequest.self, from: bytes)
+                if self.memoryStore == nil { self.memoryStore = try ConversationMemory.open() }
+                guard let store = self.memoryStore else { throw MemoryFailure.storage }
+                let data = try store.perform(request)
+                response = ["version": 1, "requestId": requestID, "ok": true,
+                            "data": try JSONSerialization.jsonObject(with: JSONEncoder().encode(data))]
+            } catch {
+                let failure: MemoryFailure
+                if let memoryFailure = error as? MemoryFailure {
+                    failure = memoryFailure
+                } else if error is DecodingError {
+                    failure = .invalidRequest
+                } else {
+                    failure = .storage
+                    Logger(subsystem: "com.argussun.signifygesture", category: "memory").error("memory:storage_operation_failed")
+                }
+                response = ["version": 1, "requestId": requestID, "ok": false,
+                            "error": ["code": failure.rawValue, "message": failure.message]]
+            }
+            self.emit(method: "onMemoryResult", payload: response, memoryGeneration: generation)
+        }
+    }
 }
 
 extension NativeBridgeCoordinator: WKScriptMessageHandler {
@@ -517,11 +732,18 @@ extension NativeBridgeCoordinator: WKScriptMessageHandler {
             emit(method: "onNativeError", payload: ["feature": "bridge", "message": "Bridge payload must be an object."])
             return
         }
+        if body["type"] as? String == "memory" {
+            handleMemory(message, body: body)
+            return
+        }
         handle(body)
     }
 }
 
 extension NativeBridgeCoordinator: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        navigationGeneration += 1
+    }
     func webView(
         _ webView: WKWebView,
         didFailProvisionalNavigation navigation: WKNavigation!,

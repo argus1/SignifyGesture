@@ -22,6 +22,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera access enables on-device hand-pose tracking for the demo. Video is not saved or sent to the web UI.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The microphone lets Signify show live captions of the person you are talking with. Audio is not saved.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Speech recognition turns the other person's speech into captions, on this device when supported. Audio is not saved.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Local network access can load the team’s development UI from your computer.</string>
 	<key>NSAppTransportSecurity</key>
@@ -31,11 +35,35 @@
 	</dict>
 	<key>SIGNIFY_FRONTEND_URL</key>
 	<string>$(SIGNIFY_FRONTEND_URL)</string>
+	<key>SIGNIFY_COGNITO_HOSTED_UI_DOMAIN</key>
+	<string>$(SIGNIFY_COGNITO_HOSTED_UI_DOMAIN)</string>
+	<key>SIGNIFY_COGNITO_APP_CLIENT_ID</key>
+	<string>$(SIGNIFY_COGNITO_APP_CLIENT_ID)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.argussun.signifygesture.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>signifygesture</string>
+			</array>
+		</dict>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

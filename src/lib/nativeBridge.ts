@@ -22,6 +22,16 @@ export function triggerTTSPlayback(text: string, voiceId?: string) {
   post({ type: "triggerTTSPlayback", text, voiceId });
 }
 
+/** Stop speaking immediately (Deaf users can't hear when TTS should be cut off, so this must always be reachable). */
+export function stopTTSPlayback() {
+  post({ type: "stopTTSPlayback" });
+}
+
+/** Start/stop live captions of the hearing person (native mic + Apple speech recognition). Native asks for permission on first start. */
+export function triggerSpeechRecognition(active: boolean) {
+  post({ type: "triggerSpeechRecognition", active });
+}
+
 /** Ask the native signing-mirror layer to replay a sequence of signs. */
 export function triggerAvatarReplay(glossSequence: string[]) {
   post({ type: "triggerAvatarReplay", glossSequence });

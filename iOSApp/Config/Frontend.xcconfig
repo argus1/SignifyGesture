@@ -1,3 +1,7 @@
 // The empty expansion prevents xcconfig from interpreting // as a comment.
 SIGNIFY_FRONTEND_URL = http:/$()/localhost:5173
+SIGNIFY_COGNITO_HOSTED_UI_DOMAIN =
+SIGNIFY_COGNITO_APP_CLIENT_ID =
 #include? "Local.xcconfig"
+// Release archives must not inherit a developer-only LAN URL.
+SIGNIFY_FRONTEND_URL[config=Release] = https:/$()/signify.hcavra.com

@@ -11,6 +11,95 @@ xcodegen generate --spec iOSApp/project.yml
 
 Do not edit the generated project file directly.
 
+## Local conversation memory (Issue #17, first increment)
+
+GRDB is resolved through Swift Package Manager from `iOSApp/project.yml`.
+`Sources/Memory/ConversationMemory.swift` implements the local store. It uses
+the Application Support / `SignifyMemory/conversations.sqlite` database,
+complete iOS file protection inherited from its directory, and backup exclusion.
+The Messages extension does not access this database. Database work runs on the
+native bridge's serial memory queue, not the UI thread.
+
+1. In the native app, type/review a few finished conversation messages; end the
+   conversation to open Recap. The recap shows real finalized captions, not the
+   sample coffee recap. Unfinished speech/sign captions are excluded.
+2. Obtain the other speaker's agreement before retaining their words. Enter a
+   title and optional context, enable **Save this transcript on my device**,
+   then **Save to memory**. Saving is explicit, never triggered by leaving/resetting.
+   The separate per-conversation recall checkbox defaults off. Nothing speaks
+   or sends automatically.
+3. Wait for **Saved on this device** (a native commit acknowledgement).
+   **Finish without saving**/**Done** is disabled while saving. On an error,
+   retry; a timeout may mean the commit happened but its acknowledgement was
+   lost, so check Memory before retrying. Stable conversation/turn UUIDs make
+   a repeated save an upsert rather than another conversation.
+4. Open Memory, then select an entry to read both speakers' saved finalized
+   text and optional gloss. Save another conversation, terminate/relaunch the
+   app, and verify both entries remain. Memory lists 20 entries per page.
+5. To search from Help, enable **Enable saved conversation recall** in Memory,
+   and **Allow recall of this conversation** on the individual entry. Enter a
+   query in **Search saved words**, then explicitly **Search saved conversations**.
+   It returns up to five exact snippets (500 UTF-16 code units each, at most
+   2,500 total), speaker attribution, time, and source-detail links. Current
+   conversation IDs and duplicate snippets are excluded. Ordinary app-help
+   search does not access personal transcripts.
+6. Disable either recall control and verify search no longer retrieves the
+   excluded content. Confirm deletion of one memory, then erase all memories.
+   Erase-all also disables global recall. Deleted text is removed from active
+   tables/search indexes and pending old-generation writes cannot restore it.
+   This is logical deletion, not a forensic secure-erase promise. The app cannot
+   remove external copies or older backups. No automatic retention trimming
+   is applied; saved conversations remain until explicit deletion.
+
+Only the configured frontend origin's main frame can request memory operations.
+The version-1 `memory` command uses UUID request IDs and `onMemoryResult` replies.
+Actions are `state`, `save`, `list`, `detail`, `delete`, `erase`,
+`setGlobalRecall`, `setRecall`, and `search`; shapes live in
+`src/types/memory.ts`. Mutations carry the database's `expectedGeneration`;
+every committed mutation increments it. Stale writes fail explicitly. Requests
+are bounded to 2 MB; saves allow 1–1,000 finalized turns (4,000 UTF-16 code units
+each), title 120, context 200, and up to 1,000 confirmed corrections.
+Search accepts at most 300 UTF-16 code units, safely tokenizes/prefix-matches at
+most 12 meaningful terms, ANDs them, and ranks by FTS5 BM25 with stable ties.
+It is lexical retrieval, not semantic recall.
+
+Browser-only and Bridge Simulator sessions cannot save personal memory. There
+is no AWS sync on the save path, no transcript logging, and no provider upload.
+The existing AWS stub is unrelated and remains unconnected to Memory.
+HealthCoacher-fresher's database/migration/FTS/epoch patterns informed this
+independently written Signify implementation; no health-domain code, data,
+MMKV migration, corpus, or model runtime was copied.
+
+**Still open:** a real completion provider, prompt grounding/output validation,
+composer suggestions, agent-generated memory answers, semantic/hybrid recall,
+held-out improvement evaluation, retrieval/device latency measurements, and
+physical-device/VoiceOver acceptance runs. Help currently displays retrieved
+source words and explicitly says model-backed completion is not connected.
+Do not treat this increment as completion of Issue #17.
+
+Tests: `ConversationMemoryTests` covers file-backed reopening, transactions,
+index synchronization, consent, pagination/bounds, stale mutations, and origin
+validation. `memory-client.test.ts` and `memory-flow.test.tsx` cover bridge
+acknowledgements/errors/timeouts and the consent/save/list/detail/delete/recall
+flows with a fake native transport. Run native Debug tests and a Release build
+using Native CI's commands; run frontend tests with `npm test` and the production
+build with `npm run build`.
+
+## Messages extension
+
+Install the iOS app, open a conversation in Apple Messages, and choose Signify
+from the Messages apps. Choose **Open composer**, type and review a draft, then choose
+**Insert into Messages**. Messages places the text in its composer; review it
+there and tap Send yourself. Insertion does not confirm delivery. If insertion
+fails, the extension keeps the draft and displays the error. Drafts are held in
+memory only and may be lost when the extension closes.
+
+The extension does not read Messages history, contacts, or incoming messages,
+and does not perform sign recognition. The web Messages screen currently contains
+sample conversations and is not connected to Apple Messages. A physical-device
+test with Messages configured is needed to verify insertion and sending; the
+simulator unit tests exercise draft validation and insertion outcomes only.
+
 ## App icon
 
 The native asset catalog is in `iOSApp/Sources/Assets.xcassets`. Its `AppIcon`
@@ -50,7 +139,7 @@ recognizer output, so a missing recognition model does not block collection.
    local destination; the system share sheet may offer cloud services and cannot
    enforce this policy. On a Mac store under ignored
    `local-data/consented-fixtures/`. No automatic upload, S3 integration,
-   credentials or inference-provider change is included.
+   AWS credentials or inference-provider change is included.
 6. **Delete prepared export** allows further captures. **Delete local session and
    close** removes the internal export and in-memory trials. Export/storage errors
    are shown in the sheet. Delete copies saved outside the app yourself, including
@@ -91,6 +180,36 @@ landmarks. Physical-device capture/export, participant recruitment, sample
 quality and model evaluation remain unverified. Future S3 work needs a private
 bucket, explicit separate upload consent/retention, authenticated short-lived
 upload authorization, deletion support and approved AWS provisioning.
+
+### Cognito sign-in groundwork
+
+Debug capture exposes an optional Cognito User Pool sign-in using the hosted UI,
+OAuth authorization code flow and PKCE. It stores access/refresh tokens in the
+iOS Keychain and can refresh or revoke a session. The Cognito app client must be
+a public/native client with no client secret, authorization code grant enabled,
+and the `openid` scope. Cognito returns refresh tokens through the authorization
+code grant; it does not use an `offline_access` scope. Register
+`signifygesture://auth/callback` as an allowed callback URL.
+
+Set `SIGNIFY_COGNITO_HOSTED_UI_DOMAIN` (an HTTPS hosted UI/custom domain) and
+`SIGNIFY_COGNITO_APP_CLIENT_ID` in the ignored
+`iOSApp/Config/Local.xcconfig`. These are public client settings, not secrets.
+Sign-in does not upload data or grant the app direct S3 access. A separately
+configured HTTPS backend must validate the Cognito access token, enforce
+participant authorization and upload consent, and return short-lived,
+object-scoped S3 upload authorization. Do not put IAM credentials or S3 write
+credentials in the app. No Cognito resources or upload backend are provisioned
+automatically by the app.
+
+For development, use an invite-only pool (disable self-service sign-up) and a
+public app client with token revocation enabled. Create collector accounts
+through the Cognito console or an authorized administrator; never commit
+passwords or enter them into chat. A new invited collector completes the
+temporary-password change in the hosted login page. For an admin-only recovery
+policy, password resets require an administrator. The local configuration must
+be present at build time; rebuild and reinstall after changing it. The HTTPS
+URL in an xcconfig file must use `https:/$()/` to prevent `//` being parsed as
+a comment. Cognito sign-in alone grants no permission to the dataset bucket.
 
 ## Requirements
 
@@ -169,7 +288,7 @@ command, then explicitly install and launch:
 xcrun devicectl device install app --device '<device-identifier>' \
   iOSApp/.device-build/Build/Products/Debug-iphoneos/SignifyGesture.app
 xcrun devicectl device process launch --device '<device-identifier>' \
-  com.argussun.signifygesture
+  com.argussun.signifygesture2
 ```
 
 Keep the frontend running with `npm run dev -- --host 0.0.0.0 --port 5173`.
@@ -180,6 +299,44 @@ Use the ignored `Docs/NATIVE_IOS_DEVICE_RUNBOOK.local.md` for local device
 identifiers. The team-facing runbook must not contain device IDs, LAN addresses,
 provisioning profiles, or signing credentials.
 
+## TestFlight bundle identity
+
+The registered app bundle identifier is `com.argussun.signifygesture2` for both
+Debug and Release; the unit-test bundle uses `com.argussun.signifygesture2.tests`.
+`iOSApp/project.yml` is the source of truth. Changes made only in Xcode's
+Signing & Capabilities panel are overwritten when XcodeGen regenerates the
+project. Native CI checks both configurations after generation.
+
+`Config/Info.plist` declares all four orientations under
+`UISupportedInterfaceOrientations~ipad` to support iPad multitasking, including
+portrait upside down. The unsuffixed orientation list preserves the existing
+iPhone behavior. Do not remove the iPad override or disable multitasking with
+`UIRequiresFullScreen` to work around an upload rejection. Native CI verifies
+the orientation list in the built Release app.
+
+After pulling a bundle-identifier correction:
+
+1. Run `xcodegen generate --spec iOSApp/project.yml` and reopen
+   `iOSApp/SignifyGesture.xcodeproj`.
+2. Select the app target and confirm the registered identifier and the correct
+   development team in **Signing & Capabilities**, including Release.
+3. Use a team-reachable deployed `SIGNIFY_FRONTEND_URL` for distribution, not
+   the simulator's localhost default or a developer-only LAN override.
+4. Select a generic iOS device and choose **Product > Archive** to create a
+   **new** Release archive. Existing archives retain the identifier they were
+   built with; regenerating the project does not repair them.
+5. Before uploading from Organizer, verify the new archive's app identity:
+
+   ```sh
+   /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+     '<archive-path>.xcarchive/Products/Applications/SignifyGesture.app/Info.plist'
+   ```
+
+   It must print `com.argussun.signifygesture2`. Then choose **Distribute App >
+   App Store Connect** and validate/upload it to the matching App Store Connect
+   app record. Uploading does not regenerate the project or change an archive's
+   bundle identifier.
+
 ## Bridge regression checks
 
 The frontend posts flat commands such as
@@ -187,8 +344,22 @@ The frontend posts flat commands such as
 that contract and the older `{ method, payload }` envelope. Errors return through
 `onNativeError` and appear in the web UI.
 
+Speech uses `{ type: "triggerSpeechRecognition", active }` and
+`{ type: "stopTTSPlayback" }`. Swift replies with `onSpeechRecognitionStatusChange`
+(`idle`/`preparing`/`listening`/`paused`/`denied`/`restricted`/`unavailable`/`error`),
+`onSpeechTranscribed`, `onAudioLevel` (~15 Hz, 0–1), `onTTSPlaybackState`, and
+`onTTSProgress` (the word being spoken).
+
+Saving typed text and receiving a sign translation never start TTS. Review the
+visible message, optionally **Edit** it, then tap **Speak**. **Copy** reports
+clipboard failures instead of claiming success. **Clear transcript** confirms
+before clearing and offers **Undo clear**. Voice mute stops current playback
+and disables Speak; enabling Voice does not play anything automatically.
+Editing, clearing, exiting, backgrounding, and audio interruptions stop playback
+without deleting the transcript (except when explicitly cleared).
+
 ```sh
-npm test -- src/test/native-bridge.test.ts src/test/camera-lifecycle.test.tsx
+npm test -- src/test/native-bridge.test.ts src/test/camera-lifecycle.test.tsx src/test/speech-flow.test.tsx
 xcodegen generate --spec iOSApp/project.yml
 xcodebuild test \
   -project iOSApp/SignifyGesture.xcodeproj \
@@ -202,10 +373,30 @@ tests do not verify physical camera capture. Keep issue #5's final checkbox open
 until an iPad run confirms permission grant/denial/revocation, background stop,
 screen/mode exit, and stop/restart without a frozen UI.
 
+Simulator tests also do not verify the microphone, speech models, or haptics.
+On a physical device, check: the mic rationale appears only on entering Speech
+mode; denial shows the Type fallback and Settings link; partial captions grow
+and finalize after a pause; the waveform follows a speaker's voice; typed text
+stays silent until **Speak** is tapped, then is spoken with a haptic at start
+and end (and a flash on iPad); **Stop
+speaking** cuts playback immediately with a warning haptic; the app's own voice
+is never captioned; and backgrounding pauses captions, then resumes them.
+
+Automated coverage includes actual WKWebView command/error replies, caption
+assembly and audio-level normalization, injected synthesizer/audio-session
+tests for empty text, activation failure, interruptions, immediate stop,
+replacement callbacks and word progress, and React tests for explicit speech,
+review/edit/copy/mute/clear, partial/final captions, error/denied states, mic
+mode lifecycle, waveform levels, and TTS exclusion. Browser smoke testing also
+checks typed save → edit → explicit Speak → read-along → Stop → clear/undo.
+These checks do not replace physical-device permission dialogs, real speech
+accuracy, echo testing, haptic perception, VoiceOver, or Deaf/HoH feedback.
+
 ## Current capability boundary
 
 The native shell provides AVFoundation capture, Vision hand-pose landmarks,
-native speech, and a WKWebView bridge. It does not include a compatible trained
+native speech captions (Speech framework) and TTS (AVSpeechSynthesizer), and a
+WKWebView bridge. It does not include a compatible trained
 Core ML model, a validated confidence threshold, an AWS integration, or a VRM
 renderer. Until those are verified, recognition must remain a no-result state;
 do not report tracking landmarks as recognized signs.

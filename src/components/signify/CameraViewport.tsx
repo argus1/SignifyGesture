@@ -39,6 +39,7 @@ export function CameraControl() {
 
   return (
     <button
+      id="help-control-camera"
       type="button"
       onClick={() => triggerCameraToggle(!cameraActive)}
       className="mx-auto my-2 rounded-full bg-background/90 px-4 py-2 text-sm font-semibold text-foreground focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40"

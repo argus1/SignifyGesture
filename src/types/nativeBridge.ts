@@ -1,3 +1,5 @@
+import type { MemoryRequest } from "@/types/memory";
+
 /**
  * Contract between this web UI and the native iOS (Swift) wrapper.
  * Swift calls the inbound methods via `evaluateJavaScript("window.NativeASLBridge.onSignDetected({...})")`.
@@ -30,6 +32,29 @@ export type SpeechTranscribedPayload = {
   isFinal: boolean;
 };
 
+export type SpeechRecognitionState =
+  "idle" | "preparing" | "listening" | "paused" | "denied" | "restricted" | "unavailable" | "error";
+
+/** Inbound: live-caption (microphone + speech recognition) lifecycle. `onDevice` is true when audio never leaves the phone. */
+export type SpeechRecognitionStatusPayload = {
+  state: SpeechRecognitionState;
+  message?: string;
+  onDevice?: boolean;
+};
+
+/** Inbound: normalized loudness (0–1, ~15 Hz) that drives the visual waveform for Deaf/HoH users. */
+export type AudioLevelPayload = {
+  source: "mic" | "tts";
+  level: number;
+};
+
+/** Inbound: the word TTS is about to speak (UTF-16 range into `text`), for visual read-along. */
+export type TTSProgressPayload = {
+  text: string;
+  location: number;
+  length: number;
+};
+
 export type TrackingState = "idle" | "tracking" | "lost";
 
 export type RecognitionStatus =
@@ -55,6 +80,7 @@ export type NativeErrorPayload = {
 };
 
 export interface NativeASLBridge {
+  onMemoryResult(payload: unknown): void;
   onSignDetected(payload: SignDetectedPayload): void;
   onSentenceTranslated(payload: SentenceTranslatedPayload): void;
   onEngineStatusChange(status: EngineStatusPayload): void;
@@ -63,12 +89,18 @@ export interface NativeASLBridge {
   onNativeError(error: NativeErrorPayload): void;
   /** Extension: what the hearing person said. Native should mute the mic while TTS is playing so the app doesn't caption itself. */
   onSpeechTranscribed(payload: SpeechTranscribedPayload): void;
+  onSpeechRecognitionStatusChange(status: SpeechRecognitionStatusPayload): void;
+  onAudioLevel(payload: AudioLevelPayload): void;
+  onTTSProgress(payload: TTSProgressPayload): void;
 }
 
 /** Outbound: messages posted to the Swift `aslBridge` script message handler. */
 export type OutboundMessage =
+  | MemoryRequest
   | { type: "triggerCameraToggle"; active: boolean }
+  | { type: "triggerSpeechRecognition"; active: boolean }
   | { type: "triggerTTSPlayback"; text: string; voiceId?: string | undefined }
+  | { type: "stopTTSPlayback" }
   | { type: "triggerAvatarReplay"; glossSequence: string[] };
 
 declare global {
