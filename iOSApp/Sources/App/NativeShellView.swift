@@ -97,6 +97,39 @@ struct NativeShellView: View {
                 )
             }
         }
+        .alert(
+            item: Binding(
+                get: { bridge.microphonePermissionPrompt },
+                set: { prompt in
+                    if prompt == nil {
+                        bridge.clearMicrophonePermissionPrompt()
+                    }
+                }
+            )
+        ) { prompt in
+            switch prompt {
+            case .rationale:
+                Alert(
+                    title: Text(prompt.title),
+                    message: Text(prompt.message),
+                    primaryButton: .default(Text("Continue"), action: bridge.confirmMicrophonePermission),
+                    secondaryButton: .cancel(Text("Not now"), action: bridge.cancelSpeechCaptions)
+                )
+            case .denied:
+                Alert(
+                    title: Text(prompt.title),
+                    message: Text(prompt.message),
+                    primaryButton: .default(Text("Open Settings"), action: bridge.openMicrophoneSettings),
+                    secondaryButton: .cancel(Text("Type instead"), action: bridge.cancelSpeechCaptions)
+                )
+            case .restricted:
+                Alert(
+                    title: Text(prompt.title),
+                    message: Text(prompt.message),
+                    dismissButton: .default(Text("OK"), action: bridge.cancelSpeechCaptions)
+                )
+            }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 bridge.sceneDidBecomeActive()
@@ -106,6 +139,7 @@ struct NativeShellView: View {
         }
         .onDisappear {
             bridge.stopCamera()
+            bridge.stopSpeechCaptions()
         }
     }
 }

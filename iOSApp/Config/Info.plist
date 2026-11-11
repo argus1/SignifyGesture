@@ -22,6 +22,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Camera access enables on-device hand-pose tracking for the demo. Video is not saved or sent to the web UI.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>The microphone lets Signify show live captions of the person you are talking with. Audio is not saved.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Speech recognition turns the other person's speech into captions, on this device when supported. Audio is not saved.</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Local network access can load the team’s development UI from your computer.</string>
 	<key>NSAppTransportSecurity</key>

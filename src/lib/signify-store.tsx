@@ -6,24 +6,30 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
 import type {
   Alternative,
+  AudioLevelPayload,
   EngineStatusPayload,
   NativeASLBridge,
   NativeErrorPayload,
   RecognitionStatusPayload,
   SentenceTranslatedPayload,
   SignDetectedPayload,
+  SpeechRecognitionStatusPayload,
   SpeechTranscribedPayload,
   TrackingState,
+  TTSProgressPayload,
 } from "@/types/nativeBridge";
 import {
   isNativeHost,
+  stopTTSPlayback,
   triggerAvatarReplay,
   triggerCameraToggle,
+  triggerSpeechRecognition,
   triggerTTSPlayback,
 } from "@/lib/nativeBridge";
 
@@ -65,6 +71,33 @@ export function decideSign(
   return { kind: "repair" as const, text: sign.gloss };
 }
 
+/* ---------- Audio levels: ~15 Hz updates kept outside React state so only the waveform re-renders ---------- */
+
+type AudioLevels = { mic: number; tts: number };
+let audioLevels: AudioLevels = { mic: 0, tts: 0 };
+const audioListeners = new Set<() => void>();
+function setAudioLevel(source: keyof AudioLevels, level: number) {
+  const v = Math.max(0, Math.min(1, Number.isFinite(level) ? level : 0));
+  if (audioLevels[source] === v) return;
+  audioLevels = { ...audioLevels, [source]: v };
+  audioListeners.forEach((l) => l());
+}
+function subscribeAudioLevels(listener: () => void) {
+  audioListeners.add(listener);
+  return () => {
+    audioListeners.delete(listener);
+  };
+}
+const getAudioLevels = () => audioLevels;
+
+/** Live loudness (0–1) of the hearing person's mic and of the app's own voice, for the visual waveform. */
+export function useAudioLevels(): AudioLevels {
+  return useSyncExternalStore(subscribeAudioLevels, getAudioLevels, getAudioLevels);
+}
+
+/** Start / end of the app speaking aloud. `key` changes on every transition so the visual cue can replay. */
+export type TTSCue = { kind: "start" | "end"; key: number };
+
 /* ---------- Engine context: high-frequency native status, kept separate so it doesn't re-render conversation UI ---------- */
 
 type EngineCtx = {
@@ -72,10 +105,17 @@ type EngineCtx = {
   tracking: Tracking;
   latencyMs: number;
   ttsPlaying: boolean;
+  /** The word being spoken right now (for read-along highlighting). */
+  ttsProgress: TTSProgressPayload | null;
+  ttsCue: TTSCue | null;
+  /** Live-caption (mic) state; null until speech mode has been entered. */
+  speechStatus: SpeechRecognitionStatusPayload | null;
   devPreview: boolean;
   setDevPreview: (v: boolean) => void;
   triggerCameraToggle: typeof triggerCameraToggle;
   triggerTTSPlayback: typeof triggerTTSPlayback;
+  stopTTSPlayback: typeof stopTTSPlayback;
+  triggerSpeechRecognition: typeof triggerSpeechRecognition;
   triggerAvatarReplay: typeof triggerAvatarReplay;
 };
 const EngineContext = createContext<EngineCtx | null>(null);
@@ -150,6 +190,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   const [recognitionStatus, setRecognitionStatus] = useState<RecognitionStatusPayload | null>(null);
   const [latencyMs, setLatencyMs] = useState(0);
   const [ttsPlaying, setTtsPlaying] = useState(false);
+  const [ttsProgress, setTtsProgress] = useState<TTSProgressPayload | null>(null);
+  const [ttsCue, setTtsCue] = useState<TTSCue | null>(null);
+  const [speechStatus, setSpeechStatus] = useState<SpeechRecognitionStatusPayload | null>(null);
   const [devPreview, setDevPreview] = useState(false);
 
   const history = useRef<Snapshot[]>([]);
@@ -275,11 +318,47 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     setEngine(isFinal ? "listening" : "translating");
   }, []);
 
+  const ttsPulse = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTTSPlaybackState = useCallback((isPlaying: boolean) => {
+    const changed = ttsOn.current !== isPlaying;
     ttsOn.current = isPlaying;
     setTtsPlaying(isPlaying);
     setEngine(isPlaying ? "speaking" : "listening");
+    if (!isPlaying) {
+      setTtsProgress(null);
+      setAudioLevel("tts", 0);
+    }
+    if (!changed) return;
+    setTtsCue({ kind: isPlaying ? "start" : "end", key: Date.now() });
+    // Native plays haptics itself; in a browser, vibrate where supported so the start/end is still felt.
+    if (!isNativeHost() && typeof navigator !== "undefined" && "vibrate" in navigator)
+      navigator.vibrate(isPlaying ? 60 : [40, 60, 40]);
   }, []);
+
+  // Each spoken word pulses the waveform so Deaf users can see the app's voice moving.
+  const onTTSProgress = useCallback((p: TTSProgressPayload) => {
+    if (!ttsOn.current) return;
+    setTtsProgress(p);
+    setAudioLevel("tts", 0.55 + Math.min(0.45, p.length / 20));
+    if (ttsPulse.current) clearTimeout(ttsPulse.current);
+    ttsPulse.current = setTimeout(() => setAudioLevel("tts", ttsOn.current ? 0.2 : 0), 180);
+  }, []);
+
+  const onAudioLevel = useCallback(({ source, level }: AudioLevelPayload) => {
+    setAudioLevel(source === "tts" ? "tts" : "mic", level);
+  }, []);
+
+  const onSpeechRecognitionStatusChange = useCallback((st: SpeechRecognitionStatusPayload) => {
+    setSpeechStatus(st);
+    if (st.state !== "listening") setAudioLevel("mic", 0);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (ttsPulse.current) clearTimeout(ttsPulse.current);
+    },
+    [],
+  );
 
   const addCaption = useCallback((speaker: Speaker, text: string, final = true) => {
     snapshot();
@@ -431,6 +510,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       onNativeError,
       onTTSPlaybackState,
       onSpeechTranscribed,
+      onSpeechRecognitionStatusChange,
+      onAudioLevel,
+      onTTSProgress,
       addCaption,
       resolveRepair,
       dismissTyping: () => {
@@ -473,6 +555,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       onNativeError,
       onTTSPlaybackState,
       onSpeechTranscribed,
+      onSpeechRecognitionStatusChange,
+      onAudioLevel,
+      onTTSProgress,
       addCaption,
       resolveRepair,
       undo,
@@ -487,13 +572,18 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       tracking,
       latencyMs,
       ttsPlaying,
+      ttsProgress,
+      ttsCue,
+      speechStatus,
       devPreview,
       setDevPreview,
       triggerCameraToggle,
       triggerTTSPlayback,
+      stopTTSPlayback,
+      triggerSpeechRecognition,
       triggerAvatarReplay,
     }),
-    [cameraActive, tracking, latencyMs, ttsPlaying, devPreview],
+    [cameraActive, tracking, latencyMs, ttsPlaying, ttsProgress, ttsCue, speechStatus, devPreview],
   );
 
   useEffect(() => {
@@ -509,6 +599,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       onNativeError,
       onTTSPlaybackState,
       onSpeechTranscribed,
+      onSpeechRecognitionStatusChange,
+      onAudioLevel,
+      onTTSProgress,
     };
   }, [
     onSignDetected,
@@ -518,6 +611,9 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     onNativeError,
     onTTSPlaybackState,
     onSpeechTranscribed,
+    onSpeechRecognitionStatusChange,
+    onAudioLevel,
+    onTTSProgress,
   ]);
 
   return (

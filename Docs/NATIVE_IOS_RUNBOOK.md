@@ -217,8 +217,14 @@ The frontend posts flat commands such as
 that contract and the older `{ method, payload }` envelope. Errors return through
 `onNativeError` and appear in the web UI.
 
+Speech uses `{ type: "triggerSpeechRecognition", active }` and
+`{ type: "stopTTSPlayback" }`. Swift replies with `onSpeechRecognitionStatusChange`
+(`idle`/`preparing`/`listening`/`paused`/`denied`/`restricted`/`unavailable`/`error`),
+`onSpeechTranscribed`, `onAudioLevel` (~15 Hz, 0–1), `onTTSPlaybackState`, and
+`onTTSProgress` (the word being spoken).
+
 ```sh
-npm test -- src/test/native-bridge.test.ts src/test/camera-lifecycle.test.tsx
+npm test -- src/test/native-bridge.test.ts src/test/camera-lifecycle.test.tsx src/test/speech-flow.test.tsx
 xcodegen generate --spec iOSApp/project.yml
 xcodebuild test \
   -project iOSApp/SignifyGesture.xcodeproj \
@@ -232,10 +238,19 @@ tests do not verify physical camera capture. Keep issue #5's final checkbox open
 until an iPad run confirms permission grant/denial/revocation, background stop,
 screen/mode exit, and stop/restart without a frozen UI.
 
+Simulator tests also do not verify the microphone, speech models, or haptics.
+On a physical device, check: the mic rationale appears only on entering Speech
+mode; denial shows the Type fallback and Settings link; partial captions grow
+and finalize after a pause; the waveform follows a speaker's voice; typed text
+is spoken with a haptic at start and end (and a flash on iPad); **Stop
+speaking** cuts playback immediately with a warning haptic; the app's own voice
+is never captioned; and backgrounding pauses captions, then resumes them.
+
 ## Current capability boundary
 
 The native shell provides AVFoundation capture, Vision hand-pose landmarks,
-native speech, and a WKWebView bridge. It does not include a compatible trained
+native speech captions (Speech framework) and TTS (AVSpeechSynthesizer), and a
+WKWebView bridge. It does not include a compatible trained
 Core ML model, a validated confidence threshold, an AWS integration, or a VRM
 renderer. Until those are verified, recognition must remain a no-result state;
 do not report tracking landmarks as recognized signs.

@@ -94,7 +94,10 @@ corresponding mode starts.
 
 The native shell currently supplies camera rationale, denial, restricted, and
 unavailable prompts (`NativeShellView.swift`, `NativeBridgeCoordinator.swift`).
-Microphone and speech-recognition authorization are not implemented yet.
+Microphone and speech-recognition authorization use the same pattern: the
+rationale alert appears only when Speech mode first starts listening, denial
+offers **Open Settings** or **Type instead**, and the web status reads "Live
+captions are unavailable. Tap Type to reply".
 
 ### 3. Capture, recognition, and uncertainty
 
@@ -264,10 +267,19 @@ implementation: `src/routes/home.tsx`, `src/routes/sign.tsx`,
 `src/lib/signify-store.tsx`, `iOSApp/Sources/App/NativeShellView.swift`, and
 `iOSApp/Sources/NativeBridge/NativeBridgeCoordinator.swift`.
 
-Still design/engineering gaps: onboarding and settings screens; microphone and
-speech-recognition permissions; camera-free incoming speech captions; explicit
-transcript review/edit before playback; playback stop control; clear
-confirmation; reliable no-hands/poor-lighting state signals; production local
+Incoming speech captions and TTS are implemented natively
+(`iOSApp/Sources/Speech/`): `SpeechAnalyzer`/`SpeechTranscriber` on iOS 26+
+with an `SFSpeechRecognizer` fallback (on-device when supported), partial
+captions that finalize after a ~1.4 s pause, and `AVSpeechSynthesizer` for
+spoken output. Non-audio cues for Deaf/HoH users: the Speech-mode waveform
+follows real mic loudness (and pulses per spoken word while the app speaks),
+the spoken word is highlighted in the caption, a haptic plays when TTS starts,
+finishes, or is stopped, and an edge flash marks start/end where there is no
+Taptic Engine (iPad). A **Stop speaking** control is shown whenever TTS is
+playing. The mic is muted while TTS plays so the app never captions itself.
+
+Still design/engineering gaps: onboarding and settings screens; explicit
+transcript review/edit before playback; clear confirmation; reliable no-hands/poor-lighting state signals; production local
 storage and cloud consent/retry; and end-to-end status announcements.
 
 **Accessibility review: unvalidated.** No Deaf/HoH or accessibility-informed

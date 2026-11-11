@@ -10,11 +10,26 @@ import {
   Undo2,
   Hand,
   AudioLines,
+  Mic,
+  MicOff,
+  Square,
   type LucideIcon,
 } from "lucide-react";
-import { useNativeBridge, useSignify, type Caption } from "@/lib/signify-store";
-import { isNativeHost, triggerTTSPlayback } from "@/lib/nativeBridge";
+import {
+  useAudioLevels,
+  useNativeBridge,
+  useSignify,
+  type Caption,
+  type TTSCue,
+} from "@/lib/signify-store";
+import {
+  isNativeHost,
+  stopTTSPlayback,
+  triggerSpeechRecognition,
+  triggerTTSPlayback,
+} from "@/lib/nativeBridge";
 import type { RecognitionStatusPayload } from "@/types/nativeBridge";
+import { captionsBlocked, speechStatusText } from "@/lib/speechStatus";
 import { CameraControl, CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
 import { AgentChip, RepairCard, TypingSuggestion } from "@/components/signify/agent";
@@ -39,7 +54,16 @@ export const Route = createFileRoute("/sign")({
  * ("HELLO I WANT ICED…") above the English. Tap an older line to see its signs again.
  * Your lines get a replay button so the other person can hear them again.
  */
-function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
+function Bubble({
+  c,
+  latest,
+  spoken,
+}: {
+  c: Caption;
+  latest: boolean;
+  /** UTF-16 range of the word being spoken aloud right now (read-along). */
+  spoken?: { location: number; length: number } | null;
+}) {
   const mine = c.speaker === "sam";
   const { textScale } = useSignify();
   const [open, setOpen] = useState(false);
@@ -97,7 +121,17 @@ function Bubble({ c, latest }: { c: Caption; latest: boolean }) {
               {icon}
             </span>
           )}
-          {c.text}
+          {spoken && spoken.location + spoken.length <= c.text.length ? (
+            <>
+              {c.text.slice(0, spoken.location)}
+              <mark className="rounded bg-mint-ink/25 px-0.5 text-inherit">
+                {c.text.slice(spoken.location, spoken.location + spoken.length)}
+              </mark>
+              {c.text.slice(spoken.location + spoken.length)}
+            </>
+          ) : (
+            c.text
+          )}
         </p>
       </div>
     </div>
@@ -157,6 +191,115 @@ function recognitionStatusText(state: RecognitionStatusPayload) {
     case "unsupportedGloss":
       return "No result. This sign is outside the supported demo vocabulary.";
   }
+}
+
+const WAVE_HEIGHTS = [18, 34, 24, 50, 30, 64, 40, 56, 28, 46, 22, 38, 16];
+
+/**
+ * Big speech-mode waveform. Natively it follows real loudness: the other person's mic while they talk,
+ * the app's own voice (pulsing per spoken word) while it speaks for you. Purely visual, so aria-hidden.
+ */
+export function VoiceWaveform({
+  hearing,
+  speaking,
+  dim,
+  native,
+}: {
+  hearing: boolean;
+  speaking: boolean;
+  dim: boolean;
+  native: boolean;
+}) {
+  const levels = useAudioLevels();
+  const level = speaking ? levels.tts : levels.mic;
+  const live = native ? level > 0.02 || hearing || speaking : hearing || speaking;
+  return (
+    <div
+      aria-hidden
+      data-testid="voice-waveform"
+      data-level={native ? level.toFixed(2) : undefined}
+      className={cn(
+        "flex h-24 items-center justify-center gap-1.5 transition-opacity duration-500",
+        live || !dim ? "opacity-100" : "opacity-40",
+      )}
+    >
+      {WAVE_HEIGHTS.map((hgt, i) => {
+        // Natively: center bars react most, edges least, so it reads as a voice rather than a meter.
+        const spread = 0.55 + 0.45 * Math.sin(((i + 1) / (WAVE_HEIGHTS.length + 1)) * Math.PI);
+        const height = native
+          ? Math.max(8, 8 + (hgt - 8) * Math.min(1, level * 1.6) * spread + (hgt - 8) * 0.12)
+          : live
+            ? hgt
+            : Math.max(8, hgt / 4);
+        return (
+          <span
+            key={i}
+            className={cn(
+              "w-2 rounded-full",
+              speaking ? "bg-mint-ink" : "bg-primary",
+              native ? "level-bar" : live && "voice-bar",
+            )}
+            style={{
+              height,
+              ...(native ? {} : { animationDelay: `${i * 90}ms`, transition: "height 300ms ease" }),
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+/** Small level-driven bars for the "speaking for you" pill. */
+function SpeakingBars() {
+  const { tts } = useAudioLevels();
+  const native = isNativeHost();
+  return (
+    <span aria-hidden className="flex h-5 items-center gap-[3px]">
+      {[10, 18, 13, 20, 11].map((h, i) => (
+        <span
+          key={i}
+          className={cn("w-[3px] rounded-full bg-mint-ink", native ? "level-bar" : "voice-bar")}
+          style={{
+            height: native ? Math.max(4, 4 + (h - 4) * Math.min(1, tts * 1.4)) : h,
+            ...(native ? {} : { animationDelay: `${i * 110}ms` }),
+          }}
+        />
+      ))}
+    </span>
+  );
+}
+
+/**
+ * Shown whenever the app is speaking out loud (both modes). Deaf users can't hear when to cut it off,
+ * so Stop is always one tap away.
+ */
+export function SpeakingIndicator() {
+  return (
+    <div className="mx-4 mb-2 flex items-center gap-3 self-center rounded-full bg-accent py-1.5 pl-4 pr-1.5 text-mint-ink shadow-[0_4px_16px_rgba(0,0,0,0.12)] animate-in fade-in">
+      <SpeakingBars />
+      <span className="text-sm font-bold">Speaking out loud</span>
+      <button
+        onClick={stopTTSPlayback}
+        className="inline-flex h-9 items-center gap-1.5 rounded-full bg-background px-3 text-sm font-bold text-foreground active:scale-95"
+      >
+        <Square className="h-3.5 w-3.5 fill-current" aria-hidden /> Stop speaking
+      </button>
+    </div>
+  );
+}
+
+/** Edge glow when the app starts / stops speaking (pairs with native haptics; replays per cue). */
+function TTSCueFlash({ cue }: { cue: TTSCue | null }) {
+  if (!cue || Date.now() - cue.key > 1500) return null;
+  return (
+    <div
+      key={cue.key}
+      aria-hidden
+      data-testid="tts-cue"
+      className={cn("tts-cue", cue.kind === "start" ? "tts-cue-start" : "tts-cue-end")}
+    />
+  );
 }
 
 /** Tiny moving sound bars: the mic is hearing them right now. */
@@ -268,6 +411,23 @@ function Conversation() {
   const latestSigned = [...s.captions].reverse().find((c) => c.speaker === "sam" && c.gloss)?.id;
   const last = s.captions[s.captions.length - 1];
   const hearing = last?.speaker === "other" && !last.final; // mic is picking up the other person right now
+  // Live captions: the mic only runs in speech mode (permission is asked on first entry, natively)
+  const [micOn, setMicOn] = useState(true);
+  useEffect(() => {
+    if (!speech || !micOn) return;
+    triggerSpeechRecognition(true);
+    return () => triggerSpeechRecognition(false);
+  }, [speech, micOn]);
+  // Leaving the conversation stops anything still being spoken
+  useEffect(() => () => stopTTSPlayback(), []);
+  const readAlongId =
+    engine.ttsPlaying && engine.ttsProgress
+      ? [...s.captions]
+          .reverse()
+          .find((c) => c.speaker === "sam" && c.text === engine.ttsProgress?.text)?.id
+      : undefined;
+  const speechBlocked = captionsBlocked(engine.speechStatus);
+  const speechText = speechStatusText(engine.speechStatus, micOn);
   // Speech mode in the browser: the other person "talks" a moment after you arrive (natively the mic does this)
   useEffect(() => {
     if (!speech || s.captions.length > 0 || isNativeHost()) return;
@@ -292,11 +452,12 @@ function Conversation() {
   }, [speech]); // eslint-disable-line react-hooks/exhaustive-deps
   const recognitionStatus = s.recognitionStatus ? recognitionStatusText(s.recognitionStatus) : null;
   const status = speech
-    ? hearing
-      ? "They're talking"
-      : engine.ttsPlaying
-        ? "Speaking for you"
-        : "Listening"
+    ? engine.ttsPlaying
+      ? "Speaking for you"
+      : hearing
+        ? "They're talking"
+        : (speechText ??
+          (engine.speechStatus?.onDevice ? "Listening · on this device" : "Listening"))
     : isNativeHost() && !engine.cameraActive
       ? "Camera off"
       : (recognitionStatus ??
@@ -314,6 +475,7 @@ function Conversation() {
 
   return (
     <div className="relative flex flex-1 flex-col">
+      <TTSCueFlash cue={engine.ttsCue} />
       {/* Full-screen camera with the same scrims as home (speech mode: plain white, like home's Speech side) */}
       {speech && <div aria-hidden className="absolute inset-0 bg-background" />}
       <div className={cn("absolute inset-0", speech && "hidden")}>
@@ -335,12 +497,31 @@ function Conversation() {
       <div className="relative z-10 flex flex-1 flex-col">
         {/* Top row mirrors home's header: left · center · right */}
         <header className="grid grid-cols-[44px_1fr_44px] items-start px-4 pt-4 pb-2">
-          <GlassButton
-            light={speech}
-            icon={ChevronLeft}
-            label={empty ? "Back" : "End conversation and see recap"}
-            onClick={() => nav({ to: empty ? "/home" : "/recap" })}
-          />
+          <div className="flex flex-col items-center gap-2">
+            <GlassButton
+              light={speech}
+              icon={ChevronLeft}
+              label={empty ? "Back" : "End conversation and see recap"}
+              onClick={() => nav({ to: empty ? "/home" : "/recap" })}
+            />
+            {speech && (
+              <GlassButton
+                light
+                icon={micOn && !speechBlocked ? Mic : MicOff}
+                label={
+                  !micOn
+                    ? "Mic off. Start listening"
+                    : speechBlocked
+                      ? "Live captions unavailable. Try again"
+                      : "Mic on: their speech becomes captions. Stop listening"
+                }
+                onClick={() => {
+                  if (micOn && speechBlocked) triggerSpeechRecognition(true);
+                  else setMicOn(!micOn);
+                }}
+              />
+            )}
+          </div>
           <span />
           {/* Right column: agent, and under it the voice on/off (a setting, not a mode) */}
           <div className="flex flex-col items-center gap-2">
@@ -369,25 +550,12 @@ function Conversation() {
         {/* Center: hand cue (sign mode) or voice bars (speech mode), same as the home screen */}
         <div className="relative flex flex-1 items-center justify-center">
           {speech ? (
-            <div
-              aria-hidden
-              className={cn(
-                "flex h-24 items-center justify-center gap-1.5 transition-opacity duration-500",
-                hearing || empty ? "opacity-100" : "opacity-40",
-              )}
-            >
-              {[18, 34, 24, 50, 30, 64, 40, 56, 28, 46, 22, 38, 16].map((hgt, i) => (
-                <span
-                  key={i}
-                  className={cn("w-2 rounded-full bg-primary", hearing && "voice-bar")}
-                  style={{
-                    height: hearing ? hgt : Math.max(8, hgt / 4),
-                    animationDelay: `${i * 90}ms`,
-                    transition: "height 300ms ease",
-                  }}
-                />
-              ))}
-            </div>
+            <VoiceWaveform
+              hearing={hearing}
+              speaking={engine.ttsPlaying}
+              dim={!empty}
+              native={isNativeHost()}
+            />
           ) : (
             <div
               className={cn(
@@ -421,7 +589,12 @@ function Conversation() {
               className="max-h-56 space-y-3 overflow-y-auto overscroll-contain [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [mask-image:linear-gradient(to_bottom,transparent,black_20px)] pt-2"
             >
               {s.captions.map((c) => (
-                <Bubble key={c.id} c={c} latest={c.id === latestSigned} />
+                <Bubble
+                  key={c.id}
+                  c={c}
+                  latest={c.id === latestSigned}
+                  spoken={c.id === readAlongId ? engine.ttsProgress : null}
+                />
               ))}
             </div>
 
@@ -483,13 +656,19 @@ function Conversation() {
           </section>
         )}
 
+        {engine.ttsPlaying && <SpeakingIndicator />}
+
         {/* Hidden while typing: hands are on the keyboard, not signing */}
         {!typing && (
           <ListeningLight
             light={speech}
             status={status}
             busy={hearing || signingNow || engine.ttsPlaying}
-            waiting={!speech && (!!s.pending || engine.tracking === "lost")}
+            waiting={
+              speech
+                ? engine.speechStatus?.state === "preparing"
+                : !!s.pending || engine.tracking === "lost"
+            }
           />
         )}
 

@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { isNativeHost, triggerAvatarReplay, triggerCameraToggle, triggerTTSPlayback } from "@/lib/nativeBridge";
+import {
+  isNativeHost,
+  stopTTSPlayback,
+  triggerAvatarReplay,
+  triggerCameraToggle,
+  triggerSpeechRecognition,
+  triggerTTSPlayback,
+} from "@/lib/nativeBridge";
 import { syncSessionToAWS } from "@/services/awsSync";
 
 describe("outbound native bridge", () => {
@@ -14,10 +21,16 @@ describe("outbound native bridge", () => {
     triggerCameraToggle(true);
     triggerTTSPlayback("Thank you!", "en-US");
     triggerAvatarReplay(["COFFEE", "ICED"]);
+    triggerSpeechRecognition(true);
+    stopTTSPlayback();
+    triggerSpeechRecognition(false);
     expect(postMessage.mock.calls.map((c) => c[0])).toEqual([
       { type: "triggerCameraToggle", active: true },
       { type: "triggerTTSPlayback", text: "Thank you!", voiceId: "en-US" },
       { type: "triggerAvatarReplay", glossSequence: ["COFFEE", "ICED"] },
+      { type: "triggerSpeechRecognition", active: true },
+      { type: "stopTTSPlayback" },
+      { type: "triggerSpeechRecognition", active: false },
     ]);
   });
 

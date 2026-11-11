@@ -1,13 +1,48 @@
 import AVFoundation
 import Foundation
+import UIKit
+
+/// Distinct haptics at the start and end of spoken playback so Deaf/HoH users can feel when the phone is talking.
+enum SpeechHaptics {
+    enum Event {
+        case started
+        case finished
+        case stopped
+    }
+
+    static func play(_ event: Event) {
+        DispatchQueue.main.async {
+            switch event {
+            case .started:
+                let generator = UIImpactFeedbackGenerator(style: .heavy)
+                generator.prepare()
+                generator.impactOccurred(intensity: 1)
+            case .finished:
+                UINotificationFeedbackGenerator().notificationOccurred(.success)
+            case .stopped:
+                UINotificationFeedbackGenerator().notificationOccurred(.warning)
+            }
+        }
+    }
+}
+
+struct SpeechProgress: Equatable {
+    let text: String
+    let location: Int
+    let length: Int
+}
 
 final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, @unchecked Sendable {
-    // Synthesizer access and playback-handler state are confined to this queue.
+    // Synthesizer access and handler state are confined to this queue.
     private let speechQueue = DispatchQueue(label: "com.argussun.signifygesture.speech")
     private let synthesizer = AVSpeechSynthesizer()
+    private let audioSession: SpeechAudioSession
     private var playbackStateHandler: ((Bool) -> Void)?
+    private var progressHandler: ((SpeechProgress) -> Void)?
+    private var activeUtterance: AVSpeechUtterance?
 
-    override init() {
+    init(audioSession: SpeechAudioSession = .shared) {
+        self.audioSession = audioSession
         super.init()
         speechQueue.async { [weak self] in
             self?.synthesizer.delegate = self
@@ -20,6 +55,12 @@ final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, @uncheck
         }
     }
 
+    func setProgressHandler(_ handler: ((SpeechProgress) -> Void)?) {
+        speechQueue.async { [weak self] in
+            self?.progressHandler = handler
+        }
+    }
+
     func speak(_ text: String, voiceIdentifier: String? = nil) throws {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else {
@@ -28,13 +69,16 @@ final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, @uncheck
 
         speechQueue.async { [weak self] in
             guard let self else { return }
+            let utterance = AVSpeechUtterance(string: trimmedText)
+            utterance.voice = Self.voice(for: voiceIdentifier)
+            // Honour the user's VoiceOver/Spoken Content voice and rate when they have set one.
+            utterance.prefersAssistiveTechnologySettings = true
+            // Replacing an utterance must not report a stop/start pair for the old one.
+            self.activeUtterance = utterance
             if self.synthesizer.isSpeaking {
                 self.synthesizer.stopSpeaking(at: .immediate)
             }
-            let utterance = AVSpeechUtterance(string: trimmedText)
-            if let voiceIdentifier, let voice = AVSpeechSynthesisVoice(identifier: voiceIdentifier) {
-                utterance.voice = voice
-            }
+            self.audioSession.beginSpeaking()
             self.synthesizer.speak(utterance)
         }
     }
@@ -46,24 +90,57 @@ final class NativeSpeechService: NSObject, AVSpeechSynthesizerDelegate, @uncheck
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
-        notifyPlaybackState(isPlaying: true)
-    }
-
-    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
-        notifyPlaybackState(isPlaying: false)
+        speechQueue.async { [weak self] in
+            guard let self, utterance === self.activeUtterance else { return }
+            SpeechHaptics.play(.started)
+            self.playbackStateHandler?(true)
+        }
     }
 
     func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
-        didCancel utterance: AVSpeechUtterance
+        willSpeakRangeOfSpeechString characterRange: NSRange,
+        utterance: AVSpeechUtterance
     ) {
-        notifyPlaybackState(isPlaying: false)
+        speechQueue.async { [weak self] in
+            guard let self, utterance === self.activeUtterance else { return }
+            self.progressHandler?(SpeechProgress(
+                text: utterance.speechString,
+                location: characterRange.location,
+                length: characterRange.length
+            ))
+        }
     }
 
-    private func notifyPlaybackState(isPlaying: Bool) {
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        finish(utterance, haptic: .finished)
+    }
+
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        finish(utterance, haptic: .stopped)
+    }
+
+    private func finish(_ utterance: AVSpeechUtterance, haptic: SpeechHaptics.Event) {
         speechQueue.async { [weak self] in
-            self?.playbackStateHandler?(isPlaying)
+            guard let self, utterance === self.activeUtterance else { return }
+            self.activeUtterance = nil
+            self.audioSession.endSpeaking()
+            SpeechHaptics.play(haptic)
+            self.playbackStateHandler?(false)
         }
+    }
+
+    /// The requested voice, else the highest-quality installed non-novelty voice for the device language.
+    static func voice(for identifier: String?) -> AVSpeechSynthesisVoice? {
+        if let identifier, let voice = AVSpeechSynthesisVoice(identifier: identifier) {
+            return voice
+        }
+        let language = AVSpeechSynthesisVoice.currentLanguageCode()
+        let candidates = AVSpeechSynthesisVoice.speechVoices().filter {
+            $0.language == language && !$0.voiceTraits.contains(.isNoveltyVoice)
+        }
+        return candidates.max { $0.quality.rawValue < $1.quality.rawValue }
+            ?? AVSpeechSynthesisVoice(language: language)
     }
 }
 
