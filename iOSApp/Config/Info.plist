@@ -31,6 +31,23 @@
 	</dict>
 	<key>SIGNIFY_FRONTEND_URL</key>
 	<string>$(SIGNIFY_FRONTEND_URL)</string>
+	<key>SIGNIFY_COGNITO_HOSTED_UI_DOMAIN</key>
+	<string>$(SIGNIFY_COGNITO_HOSTED_UI_DOMAIN)</string>
+	<key>SIGNIFY_COGNITO_APP_CLIENT_ID</key>
+	<string>$(SIGNIFY_COGNITO_APP_CLIENT_ID)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.argussun.signifygesture.auth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>signifygesture</string>
+			</array>
+		</dict>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>

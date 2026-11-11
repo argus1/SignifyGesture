@@ -50,7 +50,7 @@ recognizer output, so a missing recognition model does not block collection.
    local destination; the system share sheet may offer cloud services and cannot
    enforce this policy. On a Mac store under ignored
    `local-data/consented-fixtures/`. No automatic upload, S3 integration,
-   credentials or inference-provider change is included.
+   AWS credentials or inference-provider change is included.
 6. **Delete prepared export** allows further captures. **Delete local session and
    close** removes the internal export and in-memory trials. Export/storage errors
    are shown in the sheet. Delete copies saved outside the app yourself, including
@@ -91,6 +91,25 @@ landmarks. Physical-device capture/export, participant recruitment, sample
 quality and model evaluation remain unverified. Future S3 work needs a private
 bucket, explicit separate upload consent/retention, authenticated short-lived
 upload authorization, deletion support and approved AWS provisioning.
+
+### Cognito sign-in groundwork
+
+Debug capture exposes an optional Cognito User Pool sign-in using the hosted UI,
+OAuth authorization code flow and PKCE. It stores access/refresh tokens in the
+iOS Keychain and can refresh or revoke a session. The Cognito app client must be
+a public/native client with no client secret, authorization code grant enabled,
+and `openid` plus `offline_access` scopes. Register
+`signifygesture://auth/callback` as an allowed callback URL.
+
+Set `SIGNIFY_COGNITO_HOSTED_UI_DOMAIN` (an HTTPS hosted UI/custom domain) and
+`SIGNIFY_COGNITO_APP_CLIENT_ID` in the ignored
+`iOSApp/Config/Local.xcconfig`. These are public client settings, not secrets.
+Sign-in does not upload data or grant the app direct S3 access. A separately
+configured HTTPS backend must validate the Cognito access token, enforce
+participant authorization and upload consent, and return short-lived,
+object-scoped S3 upload authorization. Do not put IAM credentials or S3 write
+credentials in the app. No Cognito resources or upload backend are provisioned
+by this change.
 
 ## Requirements
 

@@ -55,6 +55,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     let camera = CameraCaptureService()
     #if DEBUG
     let trialRecorder = DebugTrialRecorder()
+    @MainActor lazy var cognitoAuth = CognitoAuthService()
     #endif
     private let speech = NativeSpeechService()
     private let classifier: any SignInferenceProvider = CoreMLSignClassifier()

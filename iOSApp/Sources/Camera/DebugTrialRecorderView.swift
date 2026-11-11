@@ -5,6 +5,7 @@ import UIKit
 
 struct DebugTrialRecorderView: View {
     @ObservedObject var recorder: DebugTrialRecorder
+    @ObservedObject var authService: CognitoAuthService
     let cameraActive: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -66,6 +67,26 @@ struct DebugTrialRecorderView: View {
                         Text("\(trial.signerID) · \(trial.split) · \(trial.gloss) · \(trial.frames.count) frames")
                     }
                     Text("To remove an accepted participant's data, delete this session and its exported copies. No upload or AWS connection is implemented.")
+                }
+                Section("S3 authentication (Debug)") {
+                    if authService.isAuthenticated {
+                        Label("Signed in with Cognito", systemImage: "checkmark.shield.fill")
+                        Button("Sign out of Cognito", role: .destructive) {
+                            Task { await authService.signOut() }
+                        }
+                    } else {
+                        Button(authService.isAuthenticating ? "Signing in…" : "Sign in with Cognito") {
+                            Task { await authService.signIn() }
+                        }
+                        .disabled(authService.isAuthenticating || authService.configurationMessage != nil)
+                    }
+                    if let message = authService.configurationMessage {
+                        Text(message)
+                    }
+                    if let error = authService.errorMessage {
+                        Text(error).foregroundStyle(.red)
+                    }
+                    Text("Sign-in only establishes an authenticated identity. This does not upload trials or grant direct S3 access; a backend must verify the access token and issue short-lived, per-upload authorization.")
                 }
                 Section("Explicit local export") {
                     Toggle("I will save only to controlled local storage, not cloud/shared services", isOn: $confirmsExport)

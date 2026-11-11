@@ -57,7 +57,11 @@ struct NativeShellView: View {
             LandmarkFrameInspector(camera: bridge.camera)
         }
         .sheet(isPresented: $showsTrialRecorder) {
-            DebugTrialRecorderView(recorder: bridge.trialRecorder, cameraActive: bridge.cameraActive)
+            DebugTrialRecorderView(
+                recorder: bridge.trialRecorder,
+                authService: bridge.cognitoAuth,
+                cameraActive: bridge.cameraActive
+            )
         }
         #endif
         .alert(

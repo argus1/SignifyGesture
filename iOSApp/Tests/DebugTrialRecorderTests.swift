@@ -165,5 +165,35 @@ final class DebugTrialRecorderTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: own.path))
         XCTAssertTrue(FileManager.default.fileExists(atPath: unrelated.path))
     }
+
+    func testCognitoConfigurationRequiresHTTPSAndBuildsPKCEAuthorizationRequest() throws {
+        XCTAssertThrowsError(try CognitoAuthConfiguration(
+            hostedUIDomain: "http://example.auth.us-west-2.amazoncognito.com",
+            clientID: "public-client"
+        ))
+        XCTAssertThrowsError(try CognitoAuthConfiguration(
+            hostedUIDomain: "https://example.auth.us-west-2.amazoncognito.com",
+            clientID: " "
+        ))
+
+        let configuration = try CognitoAuthConfiguration(
+            hostedUIDomain: "https://example.auth.us-west-2.amazoncognito.com",
+            clientID: "public-client"
+        )
+        let url = try configuration.authorizationURL(state: "random-state", codeChallenge: "pkce-challenge")
+        let components = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        let query = Dictionary(uniqueKeysWithValues: (components.queryItems ?? []).compactMap {
+            item in item.value.map { (item.name, $0) }
+        })
+
+        XCTAssertEqual(components.path, "/oauth2/authorize")
+        XCTAssertEqual(query["client_id"], "public-client")
+        XCTAssertEqual(query["response_type"], "code")
+        XCTAssertEqual(query["redirect_uri"], "signifygesture://auth/callback")
+        XCTAssertEqual(query["scope"], "openid offline_access")
+        XCTAssertEqual(query["state"], "random-state")
+        XCTAssertEqual(query["code_challenge"], "pkce-challenge")
+        XCTAssertEqual(query["code_challenge_method"], "S256")
+    }
 }
 #endif
