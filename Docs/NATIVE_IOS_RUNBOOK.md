@@ -199,7 +199,7 @@ command, then explicitly install and launch:
 xcrun devicectl device install app --device '<device-identifier>' \
   iOSApp/.device-build/Build/Products/Debug-iphoneos/SignifyGesture.app
 xcrun devicectl device process launch --device '<device-identifier>' \
-  com.argussun.signifygesture
+  com.argussun.signifygesture2
 ```
 
 Keep the frontend running with `npm run dev -- --host 0.0.0.0 --port 5173`.
@@ -209,6 +209,37 @@ prompted. A launch with an unreachable frontend is not a camera verification.
 Use the ignored `Docs/NATIVE_IOS_DEVICE_RUNBOOK.local.md` for local device
 identifiers. The team-facing runbook must not contain device IDs, LAN addresses,
 provisioning profiles, or signing credentials.
+
+## TestFlight bundle identity
+
+The registered app bundle identifier is `com.argussun.signifygesture2` for both
+Debug and Release; the unit-test bundle uses `com.argussun.signifygesture2.tests`.
+`iOSApp/project.yml` is the source of truth. Changes made only in Xcode's
+Signing & Capabilities panel are overwritten when XcodeGen regenerates the
+project. Native CI checks both configurations after generation.
+
+After pulling a bundle-identifier correction:
+
+1. Run `xcodegen generate --spec iOSApp/project.yml` and reopen
+   `iOSApp/SignifyGesture.xcodeproj`.
+2. Select the app target and confirm the registered identifier and the correct
+   development team in **Signing & Capabilities**, including Release.
+3. Use a team-reachable deployed `SIGNIFY_FRONTEND_URL` for distribution, not
+   the simulator's localhost default or a developer-only LAN override.
+4. Select a generic iOS device and choose **Product > Archive** to create a
+   **new** Release archive. Existing archives retain the identifier they were
+   built with; regenerating the project does not repair them.
+5. Before uploading from Organizer, verify the new archive's app identity:
+
+   ```sh
+   /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+     '<archive-path>.xcarchive/Products/Applications/SignifyGesture.app/Info.plist'
+   ```
+
+   It must print `com.argussun.signifygesture2`. Then choose **Distribute App >
+   App Store Connect** and validate/upload it to the matching App Store Connect
+   app record. Uploading does not regenerate the project or change an archive's
+   bundle identifier.
 
 ## Bridge regression checks
 

@@ -153,11 +153,11 @@ export function StatusPill({ children, dot = "bg-primary" }: { children: ReactNo
 
 /** Big page title for the tab pages (Messages, Community, Memory): same spot and size everywhere.
  *  action = optional round button on the right; sub = optional line under the title. */
-export function PageTitle({ title, action, sub }: { title: string; action?: ReactNode; sub?: ReactNode }) {
+export function PageTitle({ title, action, sub, helpFocusId }: { title: string; action?: ReactNode; sub?: ReactNode; helpFocusId?: string }) {
   return (
     <div className="px-6 pt-4">
       <div className="flex min-h-12 items-center justify-between gap-3">
-        <h1 className="headline text-[40px] leading-none">{title}</h1>
+        <h1 id={helpFocusId} tabIndex={helpFocusId ? -1 : undefined} className="headline text-[40px] leading-none">{title}</h1>
         {action}
       </div>
       {sub && <div className="mt-2">{sub}</div>}

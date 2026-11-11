@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CircleHelp } from "lucide-react";
+import { useRouter } from "@tanstack/react-router";
+import { toast } from "sonner";
 import {
   Sheet,
   SheetContent,
@@ -18,6 +20,7 @@ import {
 import { isNativeHost } from "@/lib/nativeBridge";
 import { useNativeBridge, useSignify } from "@/lib/signify-store";
 import { cn } from "@/lib/utils";
+import { executeHelpAction, HELP_ACTION_VERSION, type HelpAction } from "@/lib/helpActions";
 
 export function HelpButton({
   className,
@@ -29,10 +32,15 @@ export function HelpButton({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [agentMessage, setAgentMessage] = useState("");
+  const trigger = useRef<HTMLButtonElement>(null);
+  const pendingAction = useRef<{ action: HelpAction; sourcePath: string } | null>(null);
+  const router = useRouter({ warn: false });
+  const getPath = () => router?.state.location.pathname ?? window.location.pathname;
+  const path = typeof window === "undefined" ? "" : getPath();
   const engine = useNativeBridge();
   const { recognitionStatus } = useSignify();
   const context = getHelpContext({
-    screen: helpScreenForPath(typeof window === "undefined" ? "" : window.location.pathname),
+    screen: helpScreenForPath(path),
     nativeHost: isNativeHost(),
     cameraActive: engine.cameraActive,
     tracking: engine.tracking,
@@ -49,10 +57,36 @@ export function HelpButton({
     }
   };
 
+  const chooseAction = (action: HelpAction) => {
+    pendingAction.current = { action, sourcePath: path };
+    changeOpen(false);
+  };
+
+  const afterClose = (event: Event) => {
+    const pending = pendingAction.current;
+    pendingAction.current = null;
+    if (!pending) return;
+    event.preventDefault();
+    window.setTimeout(async () => {
+      const result = await executeHelpAction(pending.action, pending.sourcePath, {
+        getPath,
+        navigate: async (target) => {
+          if (!router) throw new Error("Router unavailable");
+          await router.navigate({ to: target });
+        },
+      });
+      if (!result.ok) {
+        trigger.current?.focus();
+        toast.error(result.message);
+      }
+    }, 0);
+  };
+
   return (
     <Sheet open={open} onOpenChange={changeOpen}>
       <SheetTrigger asChild>
         <button
+          ref={trigger}
           type="button"
           aria-label="Help"
           className={cn(
@@ -63,7 +97,12 @@ export function HelpButton({
           <CircleHelp className="h-6 w-6" aria-hidden />
         </button>
       </SheetTrigger>
-      <SheetContent inPhone side="bottom" className="max-h-[90%] overflow-y-auto rounded-t-[2rem]">
+      <SheetContent
+        inPhone
+        side="bottom"
+        onCloseAutoFocus={afterClose}
+        className="max-h-[90%] overflow-y-auto rounded-t-[2rem]"
+      >
         <SheetHeader className="text-left">
           <SheetTitle className="text-2xl font-black">Help</SheetTitle>
           <SheetDescription>
@@ -152,6 +191,65 @@ export function HelpButton({
             >
               Stop camera
             </button>
+          )}
+          {(path === "/sign" || (context.nativeHost && path === "/home")) && (
+            <section aria-label="Find a control">
+              <h2 className="mb-2 font-bold">Find a control</h2>
+              <div className="flex flex-wrap gap-2">
+                {context.nativeHost && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      chooseAction({
+                        version: HELP_ACTION_VERSION,
+                        type: "highlight",
+                        control: "camera",
+                      })
+                    }
+                    className="min-h-11 rounded-xl bg-muted px-3 font-semibold"
+                  >
+                    Show camera control
+                  </button>
+                )}
+                {path === "/sign" && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      chooseAction({
+                        version: HELP_ACTION_VERSION,
+                        type: "highlight",
+                        control: "type",
+                      })
+                    }
+                    className="min-h-11 rounded-xl bg-muted px-3 font-semibold"
+                  >
+                    Show type control
+                  </button>
+                )}
+              </div>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Showing a control does not activate it.
+              </p>
+            </section>
+          )}
+          {router && ["/home", "/messages", "/community", "/memory", "/learn"].includes(path) && (
+            <section aria-label="Go to a screen">
+              <h2 className="mb-2 font-bold">Go to a screen</h2>
+              <div className="flex flex-wrap gap-2">
+                {(["messages", "community", "memory"] as const).map((destination) => (
+                  <button
+                    key={destination}
+                    type="button"
+                    onClick={() =>
+                      chooseAction({ version: HELP_ACTION_VERSION, type: "navigate", destination })
+                    }
+                    className="min-h-11 rounded-xl bg-muted px-3 font-semibold capitalize"
+                  >
+                    {destination}
+                  </button>
+                ))}
+              </div>
+            </section>
           )}
           <section aria-label="Help results" aria-live="polite">
             <h2 className="mb-2 font-bold">{query ? "Search results" : "Instructions"}</h2>

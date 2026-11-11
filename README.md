@@ -63,6 +63,12 @@ tracking, recognition and speech status; it does not read captions or send
 questions to a model. Closing it returns to the existing screen and conversation.
 The browser camera is a sample, not a live feed.
 
+Help can focus the camera or typing control without activating it. Its explicit
+screen links are limited to Messages, Community, and Memory, and are unavailable
+in a conversation so help cannot end it or discard an in-progress draft. A
+versioned, allowlisted action layer rejects unknown or stale targets; a model or
+native bridge is not yet allowed to invoke these actions.
+
 AI help is an integration stub, not an enabled provider. The intended policy is
 cloud primary with local AFM validation on a ready device, otherwise cloud
 validation; on offline or unstable connections a ready AFM would be primary

@@ -21,7 +21,7 @@ function Memory() {
   return (
     <div className="flex flex-1 flex-col">
       <TopBar />
-      <PageTitle title="Memory" sub={<p className="flex items-center gap-2 text-lg font-bold"><AgentIcon className="h-6 w-6" /> Saved by Signify Agent</p>} />
+      <PageTitle title="Memory" helpFocusId="help-destination-memory" sub={<p className="flex items-center gap-2 text-lg font-bold"><AgentIcon className="h-6 w-6" /> Saved by Signify Agent</p>} />
       <ul className="mt-3 space-y-1 px-3 pb-4">
         {RECAPS.map((r) => (
           <li key={r.title}>

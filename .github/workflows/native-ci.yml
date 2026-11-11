@@ -35,6 +35,30 @@ jobs:
           xcodebuild -version
       - name: Generate project from source specification
         run: xcodegen generate --spec iOSApp/project.yml
+      - name: Verify generated bundle identifiers
+        run: |
+          set -euo pipefail
+          for configuration in Debug Release; do
+            xcodebuild \
+              -project iOSApp/SignifyGesture.xcodeproj \
+              -alltargets \
+              -configuration "$configuration" \
+              -sdk iphoneos \
+              -showBuildSettings -json |
+              python3 -c '
+          import json, sys
+          settings = {entry["target"]: entry["buildSettings"] for entry in json.load(sys.stdin)}
+          expected = {
+              "SignifyGesture": "com.argussun.signifygesture2",
+              "SignifyGestureTests": "com.argussun.signifygesture2.tests",
+          }
+          for target, identifier in expected.items():
+              actual = settings[target]["PRODUCT_BUNDLE_IDENTIFIER"]
+              if actual != identifier:
+                  raise SystemExit(f"{target}: expected {identifier}, got {actual}")
+              print(f"{target}: {actual}")
+          '
+          done
       - name: Select an available iPhone simulator
         id: simulator
         run: |

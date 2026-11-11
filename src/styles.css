@@ -264,3 +264,7 @@ html[data-native-host] .native-camera-backdrop {
 @keyframes listen-shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
 @keyframes listen-breathe { 0%, 100% { opacity: 0.55; transform: translateX(-50%) scaleY(0.75); } 50% { opacity: 1; transform: translateX(-50%) scaleY(1.1); } }
 @media (prefers-reduced-motion: reduce) { .listen-line, .listen-cone { animation: none; } }
+[data-help-highlight] {
+  outline: 4px solid #007b59 !important;
+  outline-offset: 3px;
+}

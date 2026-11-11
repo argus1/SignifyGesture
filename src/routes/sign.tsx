@@ -435,15 +435,18 @@ function BarToggle({
   on,
   onClick,
   light = false,
+  helpId,
 }: {
   icon: LucideIcon;
   label: string;
   on: boolean;
   onClick: () => void;
   light?: boolean;
+  helpId?: string;
 }) {
   return (
     <button
+      id={helpId}
       onClick={onClick}
       aria-pressed={on}
       className={cn(
@@ -844,6 +847,7 @@ export function Conversation({ mode = "sign" }: { mode?: ConversationMode }) {
             light={speech}
             icon={Keyboard}
             label="Type"
+            helpId="help-control-type"
             on={typing}
             onClick={() => {
               if (typing) s.cancelTyped();
