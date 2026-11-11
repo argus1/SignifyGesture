@@ -43,6 +43,9 @@ targets:
     platform: iOS
     sources:
       - path: Sources
+    dependencies:
+      - target: SignifyMessages
+        embed: true
     settings:
       base:
         PRODUCT_NAME: SignifyGesture
@@ -55,11 +58,27 @@ targets:
         INFOPLIST_KEY_SIGNIFY_FRONTEND_URL: "$(SIGNIFY_FRONTEND_URL)"
         CODE_SIGN_STYLE: Automatic
 
+  SignifyMessages:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: MessagesExtension
+        excludes:
+          - Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: SignifyMessages
+        PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture2.messages
+        INFOPLIST_FILE: MessagesExtension/Info.plist
+        APPLICATION_EXTENSION_API_ONLY: YES
+        SKIP_INSTALL: YES
+
   SignifyGestureTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - path: Tests
+      - path: MessagesExtension/MessageDraft.swift
     dependencies:
       - target: SignifyGesture
     settings:

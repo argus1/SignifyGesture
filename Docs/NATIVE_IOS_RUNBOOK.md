@@ -11,6 +11,21 @@ xcodegen generate --spec iOSApp/project.yml
 
 Do not edit the generated project file directly.
 
+## Messages extension
+
+Install the iOS app, open a conversation in Apple Messages, and choose Signify
+from the Messages apps. Choose **Open composer**, type and review a draft, then choose
+**Insert into Messages**. Messages places the text in its composer; review it
+there and tap Send yourself. Insertion does not confirm delivery. If insertion
+fails, the extension keeps the draft and displays the error. Drafts are held in
+memory only and may be lost when the extension closes.
+
+The extension does not read Messages history, contacts, or incoming messages,
+and does not perform sign recognition. The web Messages screen currently contains
+sample conversations and is not connected to Apple Messages. A physical-device
+test with Messages configured is needed to verify insertion and sending; the
+simulator unit tests exercise draft validation and insertion outcomes only.
+
 ## App icon
 
 The native asset catalog is in `iOSApp/Sources/Assets.xcassets`. Its `AppIcon`

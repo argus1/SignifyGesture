@@ -50,6 +50,7 @@ jobs:
           settings = {entry["target"]: entry["buildSettings"] for entry in json.load(sys.stdin)}
           expected = {
               "SignifyGesture": "com.argussun.signifygesture2",
+              "SignifyMessages": "com.argussun.signifygesture2.messages",
               "SignifyGestureTests": "com.argussun.signifygesture2.tests",
           }
           for target, identifier in expected.items():
@@ -114,4 +115,23 @@ jobs:
           if info.get("UIRequiresFullScreen", False):
               raise SystemExit("iPad multitasking must not be disabled with UIRequiresFullScreen")
           print("Built iPad bundle supports all four multitasking orientations.")
+          PY
+      - name: Verify embedded Messages extension
+        run: |
+          python3 - <<'PY'
+          import os
+          import plistlib
+          from pathlib import Path
+
+          app = Path(os.environ["RUNNER_TEMP"]) / "signify-release/Build/Products/Release-iphonesimulator/SignifyGesture.app"
+          with (app / "PlugIns/SignifyMessages.appex/Info.plist").open("rb") as source:
+              info = plistlib.load(source)
+          extension = info.get("NSExtension", {})
+          if info.get("CFBundleIdentifier") != "com.argussun.signifygesture2.messages":
+              raise SystemExit("Messages extension bundle identifier is incorrect")
+          if extension.get("NSExtensionPointIdentifier") != "com.apple.message-payload-provider":
+              raise SystemExit("Messages extension point is incorrect")
+          if extension.get("NSExtensionPrincipalClass") != "SignifyMessages.MessagesViewController":
+              raise SystemExit("Messages extension principal class is incorrect")
+          print("Messages extension is embedded with the expected metadata.")
           PY
