@@ -17,7 +17,10 @@ export function BridgeSimulator() {
   const stop = useRef(false);
   const ref = useRef(s);
   ref.current = s;
-  const bridge = () => window.NativeASLBridge!;
+  const bridge = () => {
+    ref.current.markSimulation();
+    return window.NativeASLBridge!;
+  };
   const sign = (gloss: string, confidence: number, alternatives: Alternative[] = []) =>
     bridge().onSignDetected({ gloss, confidence, alternatives, isFinal: true, timestamp: Date.now() });
   const sentence = (naturalEnglish: string, rawGloss = naturalEnglish.toUpperCase()) => bridge().onSentenceTranslated({ rawGloss, naturalEnglish });

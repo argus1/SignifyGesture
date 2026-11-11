@@ -4,6 +4,7 @@ import Foundation
 import QuartzCore
 import UIKit
 import WebKit
+import OSLog
 
 enum CameraPermissionPrompt: String, Identifiable {
     case rationale
@@ -94,6 +95,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     private let classifier: any SignInferenceProvider = CoreMLSignClassifier()
     private let avatarRuntime: AvatarRuntime = UnavailableAvatarRuntime()
     private weak var webView: WKWebView?
+    private let memoryQueue = DispatchQueue(label: "com.argussun.signifygesture.memory", qos: .userInitiated)
+    private var memoryStore: ConversationMemory?
+    private var navigationGeneration = 0
 
     private let inferenceStateQueue = DispatchQueue(
         label: "com.argussun.signifygesture.inference-state",
@@ -345,7 +349,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         emit(method: "onRecognitionStatusChange", payload: payload)
     }
 
-    private func emit(method: String, payload: Any) {
+    private func emit(method: String, payload: Any, memoryGeneration: Int? = nil) {
         guard JSONSerialization.isValidJSONObject([payload]),
               let data = try? JSONSerialization.data(withJSONObject: [payload]),
               let json = String(data: data, encoding: .utf8) else {
@@ -354,7 +358,13 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         let fragment = String(json.dropFirst().dropLast())
         let script = "window.NativeASLBridge && window.NativeASLBridge.\(method) && window.NativeASLBridge.\(method)(\(fragment));"
         DispatchQueue.main.async { [weak self] in
-            self?.webView?.evaluateJavaScript(script)
+            guard let self else { return }
+            if let memoryGeneration {
+                guard self.navigationGeneration == memoryGeneration,
+                      Self.trustsMemoryOrigin(frontend: self.memoryFrontendURL, source: self.webView?.url,
+                                              isMainFrame: true) else { return }
+            }
+            self.webView?.evaluateJavaScript(script)
         }
     }
 
@@ -653,6 +663,64 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         }
     }
 
+    static func trustsMemoryOrigin(frontend: URL?, source: URL?, isMainFrame: Bool) -> Bool {
+        guard isMainFrame, let frontend, let source,
+              ["https", "http"].contains(frontend.scheme?.lowercased() ?? ""),
+              frontend.scheme?.lowercased() == source.scheme?.lowercased(),
+              frontend.host?.lowercased() == source.host?.lowercased(),
+              frontend.host != nil else { return false }
+        let defaultPort = frontend.scheme?.lowercased() == "https" ? 443 : 80
+        return (frontend.port ?? defaultPort) == (source.port ?? defaultPort)
+    }
+
+    private var memoryFrontendURL: URL? {
+        guard let value = Bundle.main.object(forInfoDictionaryKey: "SIGNIFY_FRONTEND_URL") as? String else { return nil }
+        return validatedFrontendURL(value)
+    }
+
+    private func handleMemory(_ message: WKScriptMessage, body: [String: Any]) {
+        let origin = message.frameInfo.securityOrigin
+        let port = origin.port == 0 ? "" : ":\(origin.port)"
+        let source = URL(string: "\(origin.protocol)://\(origin.host)\(port)")
+        guard Self.trustsMemoryOrigin(frontend: memoryFrontendURL, source: source,
+                                     isMainFrame: message.frameInfo.isMainFrame),
+              Self.trustsMemoryOrigin(frontend: memoryFrontendURL, source: webView?.url, isMainFrame: true) else {
+            Logger(subsystem: "com.argussun.signifygesture", category: "memory").error("memory:untrusted_origin")
+            return
+        }
+        guard let requestID = body["requestId"] as? String, UUID(uuidString: requestID) != nil else {
+            emit(method: "onNativeError", payload: ["feature": "memory", "message": MemoryFailure.invalidRequest.message])
+            return
+        }
+        let generation = navigationGeneration
+        memoryQueue.async { [weak self] in
+            guard let self else { return }
+            let response: [String: Any]
+            do {
+                let bytes = try JSONSerialization.data(withJSONObject: body)
+                guard bytes.count <= 2_000_000 else { throw MemoryFailure.invalidRequest }
+                let request = try JSONDecoder().decode(MemoryRequest.self, from: bytes)
+                if self.memoryStore == nil { self.memoryStore = try ConversationMemory.open() }
+                guard let store = self.memoryStore else { throw MemoryFailure.storage }
+                let data = try store.perform(request)
+                response = ["version": 1, "requestId": requestID, "ok": true,
+                            "data": try JSONSerialization.jsonObject(with: JSONEncoder().encode(data))]
+            } catch {
+                let failure: MemoryFailure
+                if let memoryFailure = error as? MemoryFailure {
+                    failure = memoryFailure
+                } else if error is DecodingError {
+                    failure = .invalidRequest
+                } else {
+                    failure = .storage
+                    Logger(subsystem: "com.argussun.signifygesture", category: "memory").error("memory:storage_operation_failed")
+                }
+                response = ["version": 1, "requestId": requestID, "ok": false,
+                            "error": ["code": failure.rawValue, "message": failure.message]]
+            }
+            self.emit(method: "onMemoryResult", payload: response, memoryGeneration: generation)
+        }
+    }
 }
 
 extension NativeBridgeCoordinator: WKScriptMessageHandler {
@@ -664,11 +732,18 @@ extension NativeBridgeCoordinator: WKScriptMessageHandler {
             emit(method: "onNativeError", payload: ["feature": "bridge", "message": "Bridge payload must be an object."])
             return
         }
+        if body["type"] as? String == "memory" {
+            handleMemory(message, body: body)
+            return
+        }
         handle(body)
     }
 }
 
 extension NativeBridgeCoordinator: WKNavigationDelegate {
+    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+        navigationGeneration += 1
+    }
     func webView(
         _ webView: WKWebView,
         didFailProvisionalNavigation navigation: WKNavigation!,

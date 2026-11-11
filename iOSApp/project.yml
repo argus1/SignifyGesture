@@ -10,6 +10,11 @@ configs:
   Debug: debug
   Release: release
 
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: 7.0.0
+
 configFiles:
   Debug: Config/Frontend.xcconfig
   Release: Config/Frontend.xcconfig
@@ -44,6 +49,8 @@ targets:
     sources:
       - path: Sources
     dependencies:
+      - package: GRDB
+        product: GRDB
       - target: SignifyMessages
         embed: true
     settings:

@@ -10,6 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
+import { createMemoryId, MemoryClient } from "@/lib/memory-client";
+import { conversationSchema, type SavedConversation } from "@/types/memory";
 import type {
   Alternative,
   AudioLevelPayload,
@@ -40,6 +42,8 @@ export type Speaker = "sam" | "other";
 /** gloss = the signs it came from (e.g. "HELLO I WANT ICED OAT-MILK LATTE"); typed = came from the keyboard, not signing. */
 export type Caption = {
   id: number;
+  memoryId: string;
+  timestamp: number;
   speaker: Speaker;
   text: string;
   final: boolean;
@@ -123,6 +127,11 @@ const EngineContext = createContext<EngineCtx | null>(null);
 /* ---------- Conversation context: captions + agent ---------- */
 
 type Ctx = {
+  memory: MemoryClient;
+  conversationId: string;
+  memorySnapshot: (title: string, context: string, recallAllowed: boolean) => SavedConversation;
+  markSimulation: () => void;
+  simulated: boolean;
   captions: Caption[];
   pending: SignEvent | null;
   streak: number;
@@ -170,8 +179,18 @@ type Ctx = {
 
 const SignifyCtx = createContext<Ctx | null>(null);
 let nextId = 1;
+const captionIdentity = () => ({
+  id: nextId++,
+  memoryId: createMemoryId(),
+  timestamp: Date.now(),
+});
 
 export function SignifyProvider({ children }: { children: ReactNode }) {
+  const [memory] = useState(() => new MemoryClient());
+  const [conversationId, setConversationId] = useState(createMemoryId);
+  const [startedAt, setStartedAt] = useState(() => Date.now());
+  const [simulated, setSimulated] = useState(false);
+  const correctionBaseline = useRef<Correction[]>([]);
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [pending, setPending] = useState<SignEvent | null>(null);
   const [streak, setStreak] = useState(0);
@@ -214,7 +233,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       if (last && last.speaker === "sam" && !last.final) {
         return [...cs.slice(0, -1), { ...last, text: `${last.text} ${word}`.trim() }];
       }
-      return [...cs, { id: nextId++, speaker: "sam", text: word, final: false }];
+      return [...cs, { ...captionIdentity(), speaker: "sam", text: word, final: false }];
     });
   }, []);
 
@@ -274,7 +293,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     setCaptions((cs) => {
       const last = cs[cs.length - 1];
       const base = last && last.speaker === speaker && !last.final ? cs.slice(0, -1) : cs;
-      return [...base, { id: nextId++, speaker, text, final: true, ...extra }];
+      return [...base, { ...captionIdentity(), speaker, text, final: true, ...extra }];
     });
     setEngine("listening");
     setStep("translate");
@@ -421,7 +440,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
         return [...cs.slice(0, -1), { ...last, text }];
       if (final && last && last.speaker === speaker && !last.final)
         return [...cs.slice(0, -1), { ...last, text, final: true }];
-      return [...cs, { id: nextId++, speaker, text, final }];
+      return [...cs, { ...captionIdentity(), speaker, text, final }];
     });
   }, []);
 
@@ -506,7 +525,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     snapshot();
     setCaptions((cs) => {
       const idx = [...cs].reverse().findIndex((c) => c.speaker === "sam");
-      if (idx === -1) return [...cs, { id: nextId++, speaker: "sam", text, final: true }];
+      if (idx === -1) return [...cs, { ...captionIdentity(), speaker: "sam", text, final: true }];
       const i = cs.length - 1 - idx;
       return cs.map((c, j) => (j === i ? { ...c, text, final: true } : c));
     });
@@ -514,6 +533,10 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const reset = useCallback(() => {
+    setConversationId(createMemoryId());
+    setStartedAt(Date.now());
+    setSimulated(false);
+    correctionBaseline.current = state.current.corrections;
     stopTTSPlayback();
     triggerSpeechRecognition(false);
     history.current = [];
@@ -532,8 +555,47 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     setTracking("idle");
   }, []);
 
+  const memorySnapshot = useCallback(
+    (title: string, context: string, recallAllowed: boolean): SavedConversation => {
+      if (simulated) throw new Error("Simulator conversations cannot be saved to personal memory.");
+      return conversationSchema.parse({
+        id: conversationId,
+        title,
+        context,
+        startedAt,
+        endedAt: Date.now(),
+        recallAllowed,
+        turns: state.current.captions
+          .filter((c) => c.final && c.text.trim())
+          .map((c, sequence) => ({
+            id: c.memoryId,
+            sequence,
+            speaker: c.speaker,
+            modality: c.speaker === "other" ? "speech" : c.typed ? "typed" : "signed",
+            text: c.text,
+            gloss: c.gloss,
+            timestamp: c.timestamp,
+          })),
+        corrections: state.current.corrections.filter(
+          (c) =>
+            !correctionBaseline.current.some(
+              (old) => old.heard === c.heard && old.meant === c.meant,
+            ),
+        ),
+      });
+    },
+    [conversationId, startedAt, simulated],
+  );
+  const markSimulation = useCallback(() => setSimulated(true), []);
+
   const value = useMemo<Ctx>(
     () => ({
+      memory,
+      conversationId,
+      memorySnapshot,
+      markSimulation,
+      simulated,
+      onMemoryResult: memory.receive,
       captions,
       pending,
       streak,
@@ -585,6 +647,11 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       reset,
     }),
     [
+      memory,
+      conversationId,
+      memorySnapshot,
+      markSimulation,
+      simulated,
       awaitingTyped,
       fixTyped,
       cancelTyped,
@@ -654,6 +721,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     window.NativeASLBridge = {
+      onMemoryResult: memory.receive,
       onSignDetected,
       onSentenceTranslated,
       onEngineStatusChange,
@@ -666,6 +734,7 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
       onTTSProgress,
     };
   }, [
+    memory,
     onSignDetected,
     onSentenceTranslated,
     onEngineStatusChange,
@@ -677,6 +746,8 @@ export function SignifyProvider({ children }: { children: ReactNode }) {
     onAudioLevel,
     onTTSProgress,
   ]);
+
+  useEffect(() => () => memory.cancel(), [memory]);
 
   return (
     <EngineContext.Provider value={engineValue}>

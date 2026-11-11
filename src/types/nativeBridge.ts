@@ -1,3 +1,5 @@
+import type { MemoryRequest } from "@/types/memory";
+
 /**
  * Contract between this web UI and the native iOS (Swift) wrapper.
  * Swift calls the inbound methods via `evaluateJavaScript("window.NativeASLBridge.onSignDetected({...})")`.
@@ -78,6 +80,7 @@ export type NativeErrorPayload = {
 };
 
 export interface NativeASLBridge {
+  onMemoryResult(payload: unknown): void;
   onSignDetected(payload: SignDetectedPayload): void;
   onSentenceTranslated(payload: SentenceTranslatedPayload): void;
   onEngineStatusChange(status: EngineStatusPayload): void;
@@ -93,6 +96,7 @@ export interface NativeASLBridge {
 
 /** Outbound: messages posted to the Swift `aslBridge` script message handler. */
 export type OutboundMessage =
+  | MemoryRequest
   | { type: "triggerCameraToggle"; active: boolean }
   | { type: "triggerSpeechRecognition"; active: boolean }
   | { type: "triggerTTSPlayback"; text: string; voiceId?: string | undefined }

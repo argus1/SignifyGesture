@@ -11,6 +11,80 @@ xcodegen generate --spec iOSApp/project.yml
 
 Do not edit the generated project file directly.
 
+## Local conversation memory (Issue #17, first increment)
+
+GRDB is resolved through Swift Package Manager from `iOSApp/project.yml`.
+`Sources/Memory/ConversationMemory.swift` implements the local store. It uses
+the Application Support / `SignifyMemory/conversations.sqlite` database,
+complete iOS file protection inherited from its directory, and backup exclusion.
+The Messages extension does not access this database. Database work runs on the
+native bridge's serial memory queue, not the UI thread.
+
+1. In the native app, type/review a few finished conversation messages; end the
+   conversation to open Recap. The recap shows real finalized captions, not the
+   sample coffee recap. Unfinished speech/sign captions are excluded.
+2. Obtain the other speaker's agreement before retaining their words. Enter a
+   title and optional context, enable **Save this transcript on my device**,
+   then **Save to memory**. Saving is explicit, never triggered by leaving/resetting.
+   The separate per-conversation recall checkbox defaults off. Nothing speaks
+   or sends automatically.
+3. Wait for **Saved on this device** (a native commit acknowledgement).
+   **Finish without saving**/**Done** is disabled while saving. On an error,
+   retry; a timeout may mean the commit happened but its acknowledgement was
+   lost, so check Memory before retrying. Stable conversation/turn UUIDs make
+   a repeated save an upsert rather than another conversation.
+4. Open Memory, then select an entry to read both speakers' saved finalized
+   text and optional gloss. Save another conversation, terminate/relaunch the
+   app, and verify both entries remain. Memory lists 20 entries per page.
+5. To search from Help, enable **Enable saved conversation recall** in Memory,
+   and **Allow recall of this conversation** on the individual entry. Enter a
+   query in **Search saved words**, then explicitly **Search saved conversations**.
+   It returns up to five exact snippets (500 UTF-16 code units each, at most
+   2,500 total), speaker attribution, time, and source-detail links. Current
+   conversation IDs and duplicate snippets are excluded. Ordinary app-help
+   search does not access personal transcripts.
+6. Disable either recall control and verify search no longer retrieves the
+   excluded content. Confirm deletion of one memory, then erase all memories.
+   Erase-all also disables global recall. Deleted text is removed from active
+   tables/search indexes and pending old-generation writes cannot restore it.
+   This is logical deletion, not a forensic secure-erase promise. The app cannot
+   remove external copies or older backups. No automatic retention trimming
+   is applied; saved conversations remain until explicit deletion.
+
+Only the configured frontend origin's main frame can request memory operations.
+The version-1 `memory` command uses UUID request IDs and `onMemoryResult` replies.
+Actions are `state`, `save`, `list`, `detail`, `delete`, `erase`,
+`setGlobalRecall`, `setRecall`, and `search`; shapes live in
+`src/types/memory.ts`. Mutations carry the database's `expectedGeneration`;
+every committed mutation increments it. Stale writes fail explicitly. Requests
+are bounded to 2 MB; saves allow 1–1,000 finalized turns (4,000 UTF-16 code units
+each), title 120, context 200, and up to 1,000 confirmed corrections.
+Search accepts at most 300 UTF-16 code units, safely tokenizes/prefix-matches at
+most 12 meaningful terms, ANDs them, and ranks by FTS5 BM25 with stable ties.
+It is lexical retrieval, not semantic recall.
+
+Browser-only and Bridge Simulator sessions cannot save personal memory. There
+is no AWS sync on the save path, no transcript logging, and no provider upload.
+The existing AWS stub is unrelated and remains unconnected to Memory.
+HealthCoacher-fresher's database/migration/FTS/epoch patterns informed this
+independently written Signify implementation; no health-domain code, data,
+MMKV migration, corpus, or model runtime was copied.
+
+**Still open:** a real completion provider, prompt grounding/output validation,
+composer suggestions, agent-generated memory answers, semantic/hybrid recall,
+held-out improvement evaluation, retrieval/device latency measurements, and
+physical-device/VoiceOver acceptance runs. Help currently displays retrieved
+source words and explicitly says model-backed completion is not connected.
+Do not treat this increment as completion of Issue #17.
+
+Tests: `ConversationMemoryTests` covers file-backed reopening, transactions,
+index synchronization, consent, pagination/bounds, stale mutations, and origin
+validation. `memory-client.test.ts` and `memory-flow.test.tsx` cover bridge
+acknowledgements/errors/timeouts and the consent/save/list/detail/delete/recall
+flows with a fake native transport. Run native Debug tests and a Release build
+using Native CI's commands; run frontend tests with `npm test` and the production
+build with `npm run build`.
+
 ## Messages extension
 
 Install the iOS app, open a conversation in Apple Messages, and choose Signify

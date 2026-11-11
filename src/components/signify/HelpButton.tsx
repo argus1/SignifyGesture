@@ -21,6 +21,7 @@ import { isNativeHost } from "@/lib/nativeBridge";
 import { useNativeBridge, useSignify } from "@/lib/signify-store";
 import { cn } from "@/lib/utils";
 import { executeHelpAction, HELP_ACTION_VERSION, type HelpAction } from "@/lib/helpActions";
+import { MemoryRecall } from "@/components/signify/MemoryRecall";
 
 export function HelpButton({
   className,
@@ -110,6 +111,7 @@ export function HelpButton({
           </SheetDescription>
         </SheetHeader>
         <div className="mt-5 space-y-5">
+          <MemoryRecall />
           <div>
             <label htmlFor="help-search" className="mb-2 block font-semibold">
               Search help

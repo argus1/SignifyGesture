@@ -1,5 +1,31 @@
 Yes, MVVM (Model-View-ViewModel) is well-suited for a native iOS ASL translation app, provided you keep the heavy video and Core ML processing in dedicated background services.
 
+## Conversation memory implementation
+
+The shared `src/lib/signify-store.tsx` context owns the live conversation,
+durable UUID identities, finalized save snapshots, and one typed `MemoryClient`.
+`src/types/memory.ts` defines the versioned bridge request/result contract.
+Recap explicitly saves reviewed text through the native bridge; Memory lists,
+opens, changes recall consent, and deletes persisted records. Browser and
+simulator previews never claim native persistence.
+
+Swift's `ConversationMemory` owns a GRDB `DatabaseQueue` with versioned SQLite
+migrations, conversation/turn records, cascading foreign keys, and a
+trigger-maintained FTS5 index. Each committed mutation increments a persisted
+generation; old-generation requests fail instead of restoring deleted data.
+The native bridge serializes operations off the UI thread and restricts memory
+access/results to the configured frontend origin/main frame. Errors are
+acknowledged without logging transcript contents.
+
+Help's explicit `MemoryRecall` tool uses this same store's bounded lexical
+retrieval, gated by global and per-conversation consent. Results retain speaker,
+timestamp, and source IDs; another speaker's text is not a user preference.
+Personal transcripts are not added to the general `HelpContext`. This is a
+storage/retrieval foundation, **not yet model-backed RAG sentence completion**.
+Provider integration, composer suggestions, grounding/output validation, and
+device evaluation remain open in Issue #17. See the [native runbook](NATIVE_IOS_RUNBOOK.md#local-conversation-memory-issue-17-first-increment)
+for the schema contract, limits, privacy/deletion behavior, and verification.
+
 Because SwiftUI relies on declarative state changes, MVVM gives you a clean way to display transcribed words and hand-tracking status without letting camera loops freeze your interface. However, pushing 30 to 60 camera frames per second directly through a @Published property on the main thread will cause UI stutter and high battery drain.
 
 🏗️ Recommended MVVM Architecture for ASL Pipelines
@@ -19,4 +45,3 @@ To get the benefits of MVVM without performance bottlenecks, separate your high-
 💡 Summary Trade-Off
 
 If your app is a **single-screen prototype**, standard MVVM is more than enough and keeps your code organized as you grow. If you later expand into **real-time AR skeleton drawing, multi-screen history logs, and custom model switching**, pairing MVVM with **Swift Concurrency (AsyncStream)** will keep the data flow between your Vision pipeline and SwiftUI views predictable and thread-safe.
-

@@ -126,6 +126,14 @@ export const HELP_TOPICS: HelpTopic[] = [
     guidance: () =>
       "The native signing avatar is not currently available; do not rely on replay as a working feature.",
   },
+  {
+    id: "memory",
+    title: "Saving and recalling conversations",
+    question: "How do I save a conversation?",
+    keywords: "memory save saved recall history transcript delete erase consent",
+    guidance: () =>
+      "In the iOS app, end a conversation, review the recap, and explicitly choose Save to memory after consent. This saves both speakers' finalized words on the device, not audio or video. In Memory, enable global recall and allow the individual conversation before using Search saved conversations in Help. Recall returns saved words with sources, not generated sentence suggestions. You can delete one conversation or erase all; external and older backup copies cannot be erased by the app. Browser previews cannot save personal memory.",
+  },
 ];
 
 /** Search bundled content only; unknown questions never produce an invented answer. */
