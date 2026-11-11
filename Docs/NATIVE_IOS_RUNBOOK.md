@@ -98,7 +98,8 @@ Debug capture exposes an optional Cognito User Pool sign-in using the hosted UI,
 OAuth authorization code flow and PKCE. It stores access/refresh tokens in the
 iOS Keychain and can refresh or revoke a session. The Cognito app client must be
 a public/native client with no client secret, authorization code grant enabled,
-and `openid` plus `offline_access` scopes. Register
+and the `openid` scope. Cognito returns refresh tokens through the authorization
+code grant; it does not use an `offline_access` scope. Register
 `signifygesture://auth/callback` as an allowed callback URL.
 
 Set `SIGNIFY_COGNITO_HOSTED_UI_DOMAIN` (an HTTPS hosted UI/custom domain) and
@@ -109,7 +110,17 @@ configured HTTPS backend must validate the Cognito access token, enforce
 participant authorization and upload consent, and return short-lived,
 object-scoped S3 upload authorization. Do not put IAM credentials or S3 write
 credentials in the app. No Cognito resources or upload backend are provisioned
-by this change.
+automatically by the app.
+
+For development, use an invite-only pool (disable self-service sign-up) and a
+public app client with token revocation enabled. Create collector accounts
+through the Cognito console or an authorized administrator; never commit
+passwords or enter them into chat. A new invited collector completes the
+temporary-password change in the hosted login page. For an admin-only recovery
+policy, password resets require an administrator. The local configuration must
+be present at build time; rebuild and reinstall after changing it. The HTTPS
+URL in an xcconfig file must use `https:/$()/` to prevent `//` being parsed as
+a comment. Cognito sign-in alone grants no permission to the dataset bucket.
 
 ## Requirements
 

@@ -190,7 +190,7 @@ final class DebugTrialRecorderTests: XCTestCase {
         XCTAssertEqual(query["client_id"], "public-client")
         XCTAssertEqual(query["response_type"], "code")
         XCTAssertEqual(query["redirect_uri"], "signifygesture://auth/callback")
-        XCTAssertEqual(query["scope"], "openid offline_access")
+        XCTAssertEqual(query["scope"], "openid")
         XCTAssertEqual(query["state"], "random-state")
         XCTAssertEqual(query["code_challenge"], "pkce-challenge")
         XCTAssertEqual(query["code_challenge_method"], "S256")
