@@ -3,6 +3,7 @@ import { ArrowLeft, Languages, MessageCircle, Users, BookOpen, type LucideIcon }
 import type { ButtonHTMLAttributes, ReactNode } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { HelpButton } from "@/components/signify/HelpButton";
 
 export function Wordmark({ className }: { className?: string | undefined }) {
   return <span className={cn("font-display text-2xl font-black tracking-tight text-primary", className)}>Signify</span>;
@@ -32,7 +33,7 @@ export function TopBar({ back, onDark = false }: { back?: string; title?: string
         </Link>
       ) : <span />}
       <Link to="/home" className="justify-self-center" aria-label="Signify home"><Wordmark className={cn("transition-colors duration-500", onDark && "text-white drop-shadow-sm")} /></Link>
-      <span />
+      <HelpButton className="justify-self-end" />
     </header>
   );
 }

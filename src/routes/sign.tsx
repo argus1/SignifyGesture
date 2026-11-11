@@ -30,6 +30,7 @@ import type { RecognitionStatusPayload } from "@/types/nativeBridge";
 import { captionsBlocked, speechStatusText } from "@/lib/speechStatus";
 import { CameraControl, CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
+import { HelpButton } from "@/components/signify/HelpButton";
 import { AgentChip, RepairCard, TypingSuggestion } from "@/components/signify/agent";
 import {
   AlertDialog,
@@ -615,7 +616,12 @@ export function Conversation({ mode = "sign" }: { mode?: ConversationMode }) {
               />
             )}
           </div>
-          <span />
+          <div className="flex justify-center">
+            <HelpButton
+              className={speech ? "bg-muted" : undefined}
+              onStopListening={speech && micOn ? () => setMicOn(false) : undefined}
+            />
+          </div>
           {/* Right column: agent, and under it the voice on/off (a setting, not a mode) */}
           <div className="flex flex-col items-center gap-2">
             <AgentChip {...(speech ? { className: "bg-muted" } : {})} />
