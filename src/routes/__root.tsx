@@ -148,7 +148,7 @@ function RootComponent() {
             {/* id + transform: sheets portal in here, and "fixed" overlays fill the phone instead of the browser */}
             <main
               id="phone-frame"
-              className="relative mx-auto [transform:translateZ(0)] flex min-h-dvh w-full max-w-[390px] flex-col overflow-hidden bg-background sm:h-[845px] sm:min-h-0 sm:rounded-[2rem] sm:shadow-[0_0_0_1px_var(--line),0_20px_60px_rgba(0,0,0,0.12)]"
+              className="relative mx-auto [transform:translateZ(0)] flex h-dvh min-h-0 w-full max-w-[390px] flex-col overflow-hidden bg-background sm:h-[845px] sm:rounded-[2rem] sm:shadow-[0_0_0_1px_var(--line),0_20px_60px_rgba(0,0,0,0.12)]"
             >
               <Outlet />
             </main>

@@ -126,7 +126,11 @@ export function Screen({
         duration: reduce ? DUR.fast : kind === "push" ? DUR.slow : DUR.base,
         ease: EASE,
       }}
-      className={cn("relative flex flex-1 flex-col", className)}
+      className={cn(
+        "relative flex min-h-0 flex-1 flex-col",
+        kind === "tab" && "pb-[var(--tab-bar-clearance)]",
+        className,
+      )}
     >
       {children}
     </motion.div>
@@ -370,7 +374,7 @@ export function TabBar() {
     <>
       <nav
         aria-label="Main"
-        className="relative z-30 mx-5 mb-[31px] mt-auto grid h-[69px] shrink-0 grid-cols-5 items-center rounded-full border-[0.75px] border-black/5 bg-[rgba(var(--glass-rgb),0.85)] px-[5px] shadow-[0_1px_3px_rgba(0,0,0,0.06),0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur-[48px] dark:border-[0.5px] dark:border-white"
+        className="absolute inset-x-5 bottom-[var(--tab-bar-bottom)] z-30 grid h-[var(--tab-bar-height)] shrink-0 grid-cols-5 items-center rounded-full border-[0.75px] border-black/5 bg-[rgba(var(--glass-rgb),0.85)] px-[5px] shadow-[0_1px_3px_rgba(0,0,0,0.06),0_8px_30px_rgba(0,0,0,0.12)] backdrop-blur-[48px] dark:border-[0.5px] dark:border-white"
       >
         {TABS.map((t) => {
           const active = path === t.to || (t.to !== "/home" && path.startsWith(t.to));

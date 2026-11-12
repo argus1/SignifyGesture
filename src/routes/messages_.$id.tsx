@@ -20,6 +20,8 @@ export const Route = createFileRoute("/messages_/$id")({
       { name: "description", content: "Captioned sign video conversation." },
       { property: "og:title", content: `${loaderData?.name ?? "Conversation"} · Signify` },
       { property: "og:description", content: "Captioned sign video conversation." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Thread,

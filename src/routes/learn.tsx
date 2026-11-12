@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen, ChevronRight, Play } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
@@ -29,11 +29,30 @@ type CaptureState = "idle" | "capturing" | "captured";
 
 function Learn() {
   const { sign } = Route.useSearch();
-  const selectedSign = sign ?? SIGNS[0]!;
+  const selectedSign = sign ?? SIGNS[0] ?? "Hello";
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [hasMoreBelow, setHasMoreBelow] = useState(false);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [frames, setFrames] = useState(0);
   const [trial, setTrial] = useState(INITIAL_TRIAL);
   const usablePercent = simulatedUsablePercentage(frames);
+
+  useEffect(() => {
+    const scrollArea = scrollRef.current;
+    if (!scrollArea) return;
+    const update = () => {
+      setHasMoreBelow(scrollArea.scrollHeight - scrollArea.clientHeight - scrollArea.scrollTop > 1);
+    };
+    update();
+    scrollArea.addEventListener("scroll", update, { passive: true });
+    const observer = new ResizeObserver(update);
+    observer.observe(scrollArea);
+    for (const child of scrollArea.children) observer.observe(child);
+    return () => {
+      scrollArea.removeEventListener("scroll", update);
+      observer.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     setCaptureState("idle");
@@ -62,126 +81,139 @@ function Learn() {
   };
 
   return (
-    <Screen kind="tab">
+    <Screen kind="tab" className="pb-0">
       <Header />
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <PageTitle title="Learn ASL" />
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          aria-label="Learn ASL practice content"
+          className="h-full overflow-y-auto overscroll-contain pb-[calc(var(--tab-bar-clearance)+24px)]"
+        >
+          <PageTitle title="Learn ASL" />
 
-        <div className="mt-5 flex gap-2 overflow-x-auto px-5 pb-1" aria-label="Signs to practice">
-          {SIGNS.map((item) => {
-            const selected = item === selectedSign;
-            return (
-              <Link
-                key={item}
-                to="/learn"
-                search={{ sign: item }}
-                resetScroll={false}
-                aria-pressed={selected}
-                className={cn(
-                  "shrink-0 rounded-full border px-4 py-2 text-[14px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
-                  selected ? "border-primary bg-surface" : "border-line bg-card",
-                )}
-              >
-                {item}
-              </Link>
-            );
-          })}
-        </div>
+          <div className="mt-5 flex gap-2 overflow-x-auto px-5 pb-1" aria-label="Signs to practice">
+            {SIGNS.map((item) => {
+              const selected = item === selectedSign;
+              return (
+                <Link
+                  key={item}
+                  to="/learn"
+                  search={{ sign: item }}
+                  resetScroll={false}
+                  aria-pressed={selected}
+                  className={cn(
+                    "shrink-0 rounded-full border px-4 py-2 text-[14px] font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
+                    selected ? "border-primary bg-surface" : "border-line bg-card",
+                  )}
+                >
+                  {item}
+                </Link>
+              );
+            })}
+          </div>
 
-        <section className="px-5 pt-4" aria-label={`${selectedSign} sign video`}>
-          <button
-            type="button"
-            onClick={playSign}
-            className="group relative aspect-video w-full overflow-hidden rounded-[24px] border border-line bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            aria-label={`Play the sign for ${selectedSign}`}
-          >
-            <span className="absolute inset-0 grid place-items-center">
-              <span className="grid h-14 w-14 place-items-center rounded-full border border-line bg-card transition-transform group-active:scale-95">
-                <Play className="h-5 w-5" aria-hidden />
-              </span>
-            </span>
-          </button>
-          <h2 className="mt-3 text-[20px] font-medium leading-6">{selectedSign}</h2>
-          <p className="mt-1 text-[13px] text-ink-2">Watch, then practice</p>
-        </section>
-
-        <section className="px-5 pt-6" aria-label="Practice capture">
-          <Eyebrow>Practice</Eyebrow>
-          <div className="mt-3 rounded-[24px] border border-line bg-card p-3">
-            <CameraViewport
-              label={`${selectedSign} practice camera`}
-              className="aspect-[4/3] rounded-[18px] border border-line"
+          <section className="px-5 pt-4" aria-label={`${selectedSign} sign video`}>
+            <button
+              type="button"
+              onClick={playSign}
+              className="group relative aspect-video w-full overflow-hidden rounded-[24px] border border-line bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              aria-label={`Play the sign for ${selectedSign}`}
             >
-              <div
-                className="absolute inset-x-0 top-0 h-1 bg-card/70"
-                role="progressbar"
-                aria-label="Capture progress"
-                aria-valuemin={0}
-                aria-valuemax={CAPTURE_TOTAL_FRAMES}
-                aria-valuenow={frames}
+              <span className="absolute inset-0 grid place-items-center">
+                <span className="grid h-14 w-14 place-items-center rounded-full border border-line bg-card transition-transform group-active:scale-95">
+                  <Play className="h-5 w-5" aria-hidden />
+                </span>
+              </span>
+            </button>
+            <h2 className="mt-3 text-[20px] font-medium leading-6">{selectedSign}</h2>
+            <p className="mt-1 text-[13px] text-ink-2">Watch, then practice</p>
+          </section>
+
+          <section className="px-5 pt-6" aria-label="Practice capture">
+            <Eyebrow>Practice</Eyebrow>
+            <div className="mt-3 rounded-[24px] border border-line bg-card p-3">
+              <CameraViewport
+                label={`${selectedSign} practice camera`}
+                className="aspect-[4/3] rounded-[18px] border border-line"
               >
                 <div
-                  className="h-full bg-primary transition-[width] duration-75"
-                  style={{ width: `${(frames / CAPTURE_TOTAL_FRAMES) * 100}%` }}
+                  className="absolute inset-x-0 top-0 h-1 bg-card/70"
+                  role="progressbar"
+                  aria-label="Capture progress"
+                  aria-valuemin={0}
+                  aria-valuemax={CAPTURE_TOTAL_FRAMES}
+                  aria-valuenow={frames}
+                >
+                  <div
+                    className="h-full bg-primary transition-[width] duration-75"
+                    style={{ width: `${(frames / CAPTURE_TOTAL_FRAMES) * 100}%` }}
+                  />
+                </div>
+                <div className="absolute inset-x-3 top-3 flex items-start justify-between gap-2">
+                  <span className="rounded-full bg-card/90 px-3 py-1.5 text-[12px] font-medium backdrop-blur-md">
+                    {frames} / {CAPTURE_TOTAL_FRAMES} frames
+                  </span>
+                  <span className="rounded-full bg-card/90 px-3 py-1.5 text-[12px] font-medium backdrop-blur-md">
+                    Usable frames {usablePercent}%
+                  </span>
+                </div>
+                <HandTrackingCue
+                  gloss={selectedSign.toUpperCase().replace(" ", "-")}
+                  className="absolute inset-x-0 top-1/2 -translate-y-1/2 [&_svg]:h-[178px] [&_svg]:w-[150px]"
                 />
-              </div>
-              <div className="absolute inset-x-3 top-3 flex items-start justify-between gap-2">
-                <span className="rounded-full bg-card/90 px-3 py-1.5 text-[12px] font-medium backdrop-blur-md">
-                  {frames} / {CAPTURE_TOTAL_FRAMES} frames
-                </span>
-                <span className="rounded-full bg-card/90 px-3 py-1.5 text-[12px] font-medium backdrop-blur-md">
-                  Usable frames {usablePercent}%
-                </span>
-              </div>
-              <HandTrackingCue
-                gloss={selectedSign.toUpperCase().replace(" ", "-")}
-                className="absolute inset-x-0 top-1/2 -translate-y-1/2 [&_svg]:h-[178px] [&_svg]:w-[150px]"
-              />
-            </CameraViewport>
-            <p className="mt-4 text-center text-[14px] font-medium" aria-live="polite">
-              Trial {trial} of 5
-            </p>
-            <PrimaryButton
-              className="mt-3 h-12"
-              disabled={captureState !== "idle"}
-              onClick={() => {
-                setFrames(0);
-                setCaptureState("capturing");
-              }}
+              </CameraViewport>
+              <p className="mt-4 text-center text-[14px] font-medium" aria-live="polite">
+                Trial {trial} of 5
+              </p>
+              <PrimaryButton
+                className="mt-3 h-12"
+                disabled={captureState !== "idle"}
+                onClick={() => {
+                  setFrames(0);
+                  setCaptureState("capturing");
+                }}
+              >
+                {captureState === "capturing"
+                  ? "Capturing…"
+                  : captureState === "captured"
+                    ? "Captured ✓"
+                    : "Start capture"}
+              </PrimaryButton>
+              <p className="mt-3 text-center text-[12px] leading-5 text-ink-2">
+                Practice the sign once before you capture.
+              </p>
+            </div>
+          </section>
+
+          <div className="px-5 pt-4">
+            <Link
+              to="/contribute"
+              search={{ sign: selectedSign }}
+              className="t-btn inline-flex h-11 w-full items-center justify-center rounded-full border border-foreground px-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
             >
-              {captureState === "capturing"
-                ? "Capturing…"
-                : captureState === "captured"
-                  ? "Captured ✓"
-                  : "Start capture"}
-            </PrimaryButton>
-            <p className="mt-3 text-center text-[12px] leading-5 text-ink-2">
-              Practice the sign once before you capture.
-            </p>
+              Contribute to ASL research
+            </Link>
           </div>
-        </section>
 
-        <div className="px-5 pt-4">
-          <Link
-            to="/contribute"
-            search={{ sign: selectedSign }}
-            className="t-btn inline-flex h-11 w-full items-center justify-center rounded-full border border-foreground px-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            Contribute to ASL research
-          </Link>
+          <div className="px-5 pb-5 pt-4">
+            <Link
+              to="/memory"
+              search={{}}
+              className="flex min-h-14 items-center gap-3 rounded-[24px] border border-line bg-card px-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              <BookOpen className="h-5 w-5 shrink-0" aria-hidden />
+              <span className="flex-1 text-[15px] font-medium">Saved conversations</span>
+              <ChevronRight className="h-4 w-4 text-chevron" aria-hidden />
+            </Link>
+          </div>
         </div>
-
-        <div className="px-5 pb-5 pt-4">
-          <Link
-            to="/memory"
-            search={{}}
-            className="flex min-h-14 items-center gap-3 rounded-[24px] border border-line bg-card px-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          >
-            <BookOpen className="h-5 w-5 shrink-0" aria-hidden />
-            <span className="flex-1 text-[15px] font-medium">Saved conversations</span>
-            <ChevronRight className="h-4 w-4 text-chevron" aria-hidden />
-          </Link>
-        </div>
+        {hasMoreBelow && (
+          <div
+            aria-hidden="true"
+            data-scroll-fade
+            className="scroll-bottom-fade pointer-events-none absolute inset-x-0 bottom-[var(--tab-bar-clearance)] z-20 h-12"
+          />
+        )}
       </div>
       <TabBar />
     </Screen>

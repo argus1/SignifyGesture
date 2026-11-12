@@ -58,10 +58,10 @@ function Home() {
   };
 
   return (
-    <div className="relative flex flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col pb-[var(--tab-bar-clearance)]">
       <Header />
       <motion.div
-        className="flex flex-1 flex-col items-center"
+        className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto pb-6"
         initial={reduce ? false : "hidden"}
         animate="show"
         variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06 } } }}
