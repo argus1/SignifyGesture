@@ -27,7 +27,7 @@ struct DebugTrialRecorderView: View {
             } else {
                 fullForm
                     .glassBackground(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
-                    .frame(maxWidth: 720)
+                    .frame(maxWidth: 720, maxHeight: .infinity)
                     .padding(.horizontal, horizontalSizeClass == .regular ? 24 : 0)
                     .padding(.vertical, horizontalSizeClass == .regular ? 24 : 0)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -170,8 +170,6 @@ struct DebugTrialRecorderView: View {
                         Section("Review captured trial") {
                             Text("\(trial.signerID) · \(trial.split) · \(trial.gloss): \(trial.frames.count) frames, \(Int(trial.frames.last?.elapsedMs ?? 0)) ms.")
                             Text("Verify the gloss was signed correctly and completely. Frame count alone does not establish sign quality.")
-                            Button("Accept trial") { perform { try recorder.accept() } }
-                            Button("Discard trial", role: .destructive) { recorder.discardPending() }
                         }
                     }
                     Section("Accepted trials") {
@@ -234,26 +232,29 @@ struct DebugTrialRecorderView: View {
             }
             .scrollContentBackground(.hidden)
             .safeAreaInset(edge: .bottom) {
-                if recorder.pendingTrial == nil {
-                    Group {
-                        if recorder.isRecording {
-                            HStack {
-                                Button("Stop and review") { recorder.stop() }
-                                    .tint(.red)
-                                Button("Hide details") { collapsed = true }
-                                    .buttonStyle(.bordered)
-                            }
-                        } else {
-                            Button("Start trial", action: startTrial)
-                                .disabled(!canStart)
+                Group {
+                    if recorder.pendingTrial != nil {
+                        HStack {
+                            Button("Discard trial", role: .destructive) { recorder.discardPending() }
+                            Button("Accept trial") { perform { try recorder.accept() } }
                         }
+                    } else if recorder.isRecording {
+                        HStack {
+                            Button("Stop and review") { recorder.stop() }
+                                .tint(.red)
+                            Button("Hide details") { collapsed = true }
+                                .buttonStyle(.bordered)
+                        }
+                    } else {
+                        Button("Start trial", action: startTrial)
+                            .disabled(!canStart)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .glassBackground(in: Rectangle())
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .glassBackground(in: Rectangle())
             }
             .transparentNavigationContainer()
             .navigationTitle("Debug trial capture")

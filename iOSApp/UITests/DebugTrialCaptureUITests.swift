@@ -65,6 +65,7 @@ final class DebugTrialCaptureUITests: XCTestCase {
 
         let accept = app.buttons["Accept trial"]
         scrollTo(accept)
+        assertOnScreen(accept, in: window)
         screenshot("4-review-\(label)")
         accept.tap()
 
@@ -97,7 +98,9 @@ final class DebugTrialCaptureUITests: XCTestCase {
 
     private func assertOnScreen(_ element: XCUIElement, in window: XCUIElement,
                                 file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertTrue(element.isHittable, "Element not hittable", file: file, line: line)
+        XCTAssertTrue(element.isHittable,
+                      "Element at \(element.frame) not hittable in window \(window.frame)",
+                      file: file, line: line)
         XCTAssertTrue(window.frame.contains(element.frame),
                       "Element \(element.frame) extends outside window \(window.frame)", file: file, line: line)
     }
