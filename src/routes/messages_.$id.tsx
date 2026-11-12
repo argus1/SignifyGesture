@@ -36,7 +36,7 @@ function Thread() {
   }, [msgs]);
   return (
     <Screen>
-      <header className="relative grid h-[76px] shrink-0 grid-cols-[64px_1fr_64px] items-start border-b border-black/[0.06] px-5 pt-[14px] dark:border-white/20">
+      <header className="relative grid h-[calc(76px+var(--top-shift))] shrink-0 grid-cols-[64px_1fr_64px] items-start border-b border-black/[0.06] px-5 pt-[calc(14px+var(--top-shift))] dark:border-white/20">
         <HeaderIconButton icon={ChevronLeft} label="Back to messages" to="/messages" size={16} />
         <div className="flex flex-col items-center pt-2">
           <p className="text-[16px] font-medium leading-5">{t.name}</p>

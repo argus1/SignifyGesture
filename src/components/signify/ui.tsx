@@ -194,7 +194,7 @@ export function Header({
   center?: ReactNode;
 }) {
   return (
-    <header className="relative z-20 grid h-[72px] shrink-0 grid-cols-[64px_1fr_64px] items-start px-5 pt-[14px]">
+    <header className="relative z-20 grid h-[calc(72px+var(--top-shift))] shrink-0 grid-cols-[64px_1fr_64px] items-start px-5 pt-[calc(14px+var(--top-shift))]">
       <div className="flex h-11 items-center">{left}</div>
       <div className="flex justify-center pt-3">
         {center ?? (

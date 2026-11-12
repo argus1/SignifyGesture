@@ -128,7 +128,7 @@ function Conversation() {
         <CameraViewport className="absolute inset-0" label="Native camera" enabled={!speech} />
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-x-0 top-0 h-[224px] bg-gradient-to-b from-black/45 to-transparent"
+          className="pointer-events-none absolute inset-x-0 top-0 h-[calc(224px+var(--top-shift))] bg-gradient-to-b from-black/45 to-transparent"
         />
         <div
           aria-hidden
@@ -170,7 +170,7 @@ function Conversation() {
         )}
 
         {/* Right-hand column: agent · sound · type (positions from the spec) */}
-        <div className="absolute right-5 top-[160px] z-20 flex flex-col gap-2">
+        <div className="absolute right-5 top-[calc(160px+var(--top-shift))] z-20 flex flex-col gap-2">
           {(!speech || speechLive) && <AgentButton />}
           {speechLive && (
             <RoundButton
@@ -249,7 +249,7 @@ function ModeToggle({
     <div
       role="tablist"
       aria-label="Who is talking"
-      className="absolute inset-x-5 top-16 z-20 flex items-start justify-between"
+      className="absolute inset-x-5 top-[calc(64px+var(--top-shift))] z-20 flex items-start justify-between"
     >
       {pills.map((p, i) => {
         const on = mode === p.id;
@@ -344,7 +344,7 @@ function SignMode({
       <div
         aria-hidden
         className={cn(
-          "pointer-events-none absolute left-[85px] top-[150px] transition-all duration-500",
+          "pointer-events-none absolute left-[85px] top-[calc(150px+var(--top-shift))] transition-all duration-500",
           empty || signingNow ? "scale-100 opacity-100" : "scale-95 opacity-0",
           lost && "opacity-40",
         )}

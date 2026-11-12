@@ -92,6 +92,8 @@
 
 /* Signify tokens (Tania's handoff spec v1.0, section 1). Exact hex values from Figma. */
 :root {
+  /* Room for the iPhone status bar and Dynamic Island: the logo starts at the 59px safe line */
+  --top-shift: max(33px, calc(env(safe-area-inset-top, 0px) - 26px));
   --radius: 1.5rem;
   --background: #ffffff;
   --foreground: #000000;
