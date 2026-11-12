@@ -132,6 +132,26 @@ trials** in the native camera toolbar. Release builds do not include the recorde
 This capture path uses native Vision landmarks, not browser camera/ML and not
 recognizer output, so a missing recognition model does not block collection.
 
+To collect on a physical device while using the deployed frontend, build Debug
+with a command-line URL override (no local development server is needed):
+
+```sh
+xcodebuild build -project iOSApp/SignifyGesture.xcodeproj \
+  -scheme SignifyGesture -configuration Debug \
+  -destination 'id=<device-identifier>' -derivedDataPath iOSApp/.device-build \
+  SIGNIFY_FRONTEND_URL=https://signify.hcavra.com
+xcrun devicectl device install app --device '<device-identifier>' \
+  iOSApp/.device-build/Build/Products/Debug-iphoneos/SignifyGesture.app
+xcrun devicectl device process launch --device '<device-identifier>' \
+  com.argussun.signifygesture2
+```
+
+The native toolbar appears only while the camera is active. **Debug → Landmarks**
+opens the live hand skeleton inspector; **Debug → Capture trials** opens the
+consented recorder. Installing a Release build hides both tools, regardless of
+which frontend is deployed. Reinstall Debug to restore them; do not enable
+training-data capture in ordinary distribution builds to work around this.
+
 1. Follow the [P07 consent/storage protocol](ASL_translation_hackathon_plan.md#p07-fixture-protocol)
    before capture. Explain the collector, private withdrawal route, purpose,
    partition and deletion deadline. The participant must affirm consent; camera

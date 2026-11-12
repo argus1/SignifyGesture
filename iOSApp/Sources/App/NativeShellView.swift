@@ -47,7 +47,7 @@ struct NativeShellView: View {
                 .font(.subheadline.weight(.semibold))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(.regularMaterial, in: Capsule())
+                .glassBackground(in: Capsule())
                 .padding(.top, 12)
                 .padding(.trailing, 12)
             }
@@ -75,6 +75,38 @@ struct NativeShellView: View {
         .onDisappear {
             bridge.stopCamera()
             bridge.stopSpeechCaptions()
+        }
+    }
+}
+
+extension View {
+    /// Liquid Glass on iOS 26+, translucent material earlier, so the camera preview stays visible behind controls.
+    @ViewBuilder
+    func glassBackground<S: Shape>(in shape: S) -> some View {
+        if #available(iOS 26.0, *) {
+            glassEffect(.regular, in: shape)
+        } else {
+            background(.ultraThinMaterial, in: shape)
+        }
+    }
+
+    @ViewBuilder
+    func glassPresentationBackground() -> some View {
+        if #available(iOS 26.0, *) {
+            presentationBackground {
+                Rectangle().fill(.clear).glassEffect(.regular, in: Rectangle())
+            }
+        } else {
+            presentationBackground(.ultraThinMaterial)
+        }
+    }
+
+    @ViewBuilder
+    func transparentNavigationContainer() -> some View {
+        if #available(iOS 18.0, *) {
+            containerBackground(.clear, for: .navigation)
+        } else {
+            self
         }
     }
 }
