@@ -7,14 +7,19 @@ import {
   type PanInfo,
 } from "framer-motion";
 import {
-  Languages,
   MessageCircle,
   Users,
   BookOpen,
   ChevronLeft as ChevronLeftIcon,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import {
+  useEffect,
+  useState,
+  type ButtonHTMLAttributes,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 import { useTheme, type ThemeChoice } from "@/lib/theme";
@@ -355,8 +360,25 @@ export function RoundButton({
 
 /* ---------------- Tab bar ---------------- */
 
-const TABS: { to: string; label: string; icon: LucideIcon }[] = [
-  { to: "/home", label: "Translate", icon: Languages },
+/** Tania's hand from the Figma handoff ("Hand icon"). Outline only, same weight as the other tab icons. */
+export function HandIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="-1.5 -1.5 38 39"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.88}
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden
+    >
+      <path d="M 16.38 34.24 C 18.19 35.97 26.53 36.46 28.27 35.78 C 30.02 35.11 32.61 33.02 34.54 30.44 C 35.48 29.18 34.54 8.17 34.54 8.17 C 34.11 7.72 32.93 6.8 31.65 6.68 C 30.95 6.83 29.43 7.34 28.92 8.17 L 28.92 14.7 L 13.18 0.3 C 12.54 0.05 11.11 -0.38 9.96 0.69 C 9.69 0.98 8.83 1.58 9.64 3.36 L 18.8 12.33 C 19.01 12.72 19.15 13.48 18 13.37 L 6.11 2.08 C 5.42 1.93 4.18 1.43 2.9 2.53 C 2.09 3.36 2.52 4.73 2.9 5.44 L 14.3 16.33 C 14.36 16.68 14.21 17.34 13.18 17.23 L 4.18 9 C 3.53 8.46 2.42 7.81 0.81 8.76 C 0.28 9.41 -0.53 10.96 0.49 12.03 L 11.25 21.98 L 11.25 23.16 L 5.15 17.97 C 4.62 17.62 3.19 17.26 1.78 18.56 C 1.4 19.06 0.88 20.31 1.78 21.38 C 2.68 22.45 11.83 29.89 16.38 34.24 Z" />
+    </svg>
+  );
+}
+
+const TABS: { to: string; label: string; icon: ComponentType<{ className?: string }> }[] = [
+  { to: "/home", label: "Translate", icon: HandIcon },
   { to: "/messages", label: "Messages", icon: MessageCircle },
   { to: "/community", label: "Community", icon: Users },
   { to: "/memory", label: "Memory", icon: BookOpen },
