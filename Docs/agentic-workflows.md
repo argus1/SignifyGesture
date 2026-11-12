@@ -17,11 +17,23 @@ extra issue-reporting workflows are installed. No-op/blocked runs use summaries,
 not additional tracking issues.
 
 All six agents require repository variable `AGENTIC_WORKFLOWS_ENABLED=true`.
-It is intentionally unset by default. PR agents accept same-repository PRs
-from writers/maintainers/admins, not forks. Documentation and bug-fix agents
-also require approval through the `agentic-changes` environment. **Configure
-required human reviewers on that environment before enabling the agents**;
-an environment name alone does not provide an approval gate.
+It is intentionally unset by default. **All six are manual-only**: a repository
+writer/maintainer/admin explicitly starts each task with **Actions → Run workflow**
+on the default branch (`main`). Opening a PR, pushing commits, labeling an issue,
+or a failed CI run never starts an agent automatically. Ordinary CI stays automatic.
+
+Manual dispatch is the solo maintainer's execution authorization, **not an
+independent approval**. No protected environment, second reviewer, `agentic-fix`
+label, public visibility, or Enterprise environment-review feature is needed.
+Existing `agentic-changes` environments/labels are unused and can be left alone.
+Draft code/documentation PRs still need normal review and required CI before merge.
+
+PR agents accept only open same-repository PRs, including drafts, not forks.
+They snapshot the selected PR's base/head when the run starts. The host checkout
+stays on the trusted default branch; test execution uses exact-SHA temporary
+worktrees inside the sandbox. A post-agent check blocks publication if the PR
+closes or its base/head moves. This does not prove that the human inspected that
+exact revision before clicking Run workflow; inspect the run's snapshot.
 
 ## Development checklist
 
@@ -33,6 +45,8 @@ an environment name alone does not provide an approval gate.
 - [x] Compile all workflows in strict mode with the pinned compiler.
 - [x] Add automated policy and source/lock consistency validation.
 - [x] Run local workflow validation and focused application regression checks.
+- [x] Convert all six agents to default-branch manual dispatch with target inputs.
+- [x] Replace environment/label gates with explicit launch and live target checks.
 - [ ] Complete the maintainer activation checklist and live smoke tests below.
 
 Check off implementation items only after verification. Live acceptance is
@@ -42,13 +56,13 @@ separate from local compilation and must not be inferred from it.
 
 Source: `agent-contract-review.md`.
 
-- Trigger: opened, synchronized, reopened, or ready-for-review PRs changing
+- Trigger: manual dispatch with required `pr_number`. Choose this agent for
   bridge types/helpers, client state, Swift bridge/speech/camera/inference code,
   or their regression tests.
 - Read both TypeScript and Swift sides, not just changed lines. Compare message
   names, fields, optionality, enum values, units, UTF-16 ranges, errors, lifecycle
   transitions, and backwards-compatible envelopes.
-- Output: at most one replaceable comment on the triggering PR. Include head
+- Output: at most one replaceable comment on the selected PR. Include head
   SHA, file/line evidence, impact, confidence, and a suggested regression test.
 - No-op: no changed contract behavior or no evidence-backed mismatch.
 
@@ -62,20 +76,22 @@ Acceptance:
 
 Source: `agent-ci-investigator.md`.
 
-- Trigger: failed `CI` or `Native CI` runs on `dev`/`main` pushes in this
-  repository. Never activate on fork/PR workflow runs or agent failures.
+- Trigger: manual dispatch with required `run_id`. Accept only a completed failed
+  `CI`/`Native CI` run for a `dev`/`main` push or same-repository PR. Fork runs,
+  successful runs, other workflows, and agent failures are rejected.
 - Fetch metadata and only relevant failed-job log excerpts. Verify run identity,
   SHA, event, repository, and conclusion before investigating.
 - Output: at most one issue, deduplicated by a stable title containing run ID
   and attempt. Include failing command, evidence, likely cause, confidence,
   infrastructure-versus-code classification, and a minimal next action.
 - Never rerun jobs, download arbitrary artifacts, or execute failed-run code.
-  A maintainer can label the resulting issue for workflow 6 after reviewing it.
+  A maintainer can manually select the resulting issue for workflow 6.
 - No-op: stale/nonmatching/successful run, or an issue already exists.
 
 Acceptance:
 - [ ] A failing trusted push run produces a report linked to the exact attempt.
-- [ ] Success, fork/PR runs, and agent workflow failures do not activate it.
+- [ ] Success, fork runs, and agent workflow failures are rejected.
+- [ ] A manually selected same-repository PR CI failure is accepted.
 - [ ] Reprocessing the same attempt does not create another issue.
 - [ ] Authentication/log-access failure is reported as blocked, not diagnosed
       as a passing run or a source-code failure.
@@ -84,8 +100,9 @@ Acceptance:
 
 Source: `agent-accessibility-test.md`.
 
-- Trigger: PRs changing conversation components/routes, styles, state, bridge
-  behavior, speech-status helpers, or related tests.
+- Trigger: manual dispatch with required `pr_number`. Choose this agent for
+  conversation components/routes, styles, state, bridge behavior, speech-status
+  helpers, or related tests.
 - Run existing speech, recognition, camera-lifecycle, routing, and repair tests.
   Use synthetic `window.NativeASLBridge` payloads for temporary targeted tests.
 - Check denied/unavailable permissions, caption partial/final transitions,
@@ -106,7 +123,8 @@ Acceptance:
 
 Source: `agent-evaluation-analysis.md`.
 
-- Trigger: PRs changing evaluation code, fixtures, inference adapters, or tests.
+- Trigger: manual dispatch with required `pr_number`. Choose this agent for
+  evaluation code, fixtures, inference adapters, or tests.
 - Run the evaluation regression tests and compare base/head JSON reports using
   the committed synthetic fixtures and the same fixed threshold (`0.7`).
   Isolate base/head worktrees and report their exact SHAs and fixture changes.
@@ -127,8 +145,8 @@ Acceptance:
 
 Source: `agent-docs-drift.md`.
 
-- Trigger: implementation/configuration pushes to `dev`, or manual dispatch
-  against `dev`; manual approval is required before agent execution.
+- Trigger: manual dispatch on `main`, without target inputs. The workflow
+  analyzes `dev` and proposes documentation corrections against `dev`.
 - Compare recent implementation changes with the tracked README, native
   runbook, device guide, accessible flow, and architecture documentation.
 - Output: at most one small draft documentation-only PR targeting `dev`.
@@ -147,25 +165,27 @@ Acceptance:
 
 Source: `agent-issue-regression.md`.
 
-- Trigger: a writer/maintainer/admin applies `agentic-fix` to an open issue;
-  manual approval through `agentic-changes` is required.
-- Check out `dev`. Recheck the label and issue state after approval. Reproduce
+- Trigger: manual dispatch with required `issue_number`, selecting an open issue,
+  not a PR. No label is required and label changes never launch a run.
+- Check out `dev`. Recheck the issue state before execution. Reproduce
   using synthetic fixtures, establish a failing test, implement a minimal fix,
   and rerun the focused test plus applicable regression checks.
 - Deterministic API checks before and after agent execution fail the job if the
-  issue is closed or the label is removed; safe-output publication then stops.
+  issue is closed or is a PR; safe-output publication then stops. Cancel the run
+  in Actions to revoke a task; removing a label does not revoke manual dispatch.
 - Output: at most one draft PR targeting `dev`, referencing the issue without
   automatically closing it. Explain red/green evidence, commands and remaining
   limitations. Safe outputs allow only frontend/native source, tests, and an
   explicit documentation allowlist, with eight-file/128 KB limits.
-- No-op: label removed, issue closed, duplicate open fix, ambiguous requirements,
+- No-op: issue closed, duplicate open fix, ambiguous requirements,
   missing reproduction, native-only verification unavailable, or scope exceeds
   the allowlist. Explain why; do not make a speculative fix.
 
 Acceptance:
-- [ ] Unlabeled issues, other label events, and unauthorized actors do not run.
+- [ ] No push, PR, label, issue, schedule or workflow-run event launches any agent.
+- [ ] An authorized manual dispatch works without a label or environment.
 - [ ] A reproducible frontend bug yields a failing-then-passing regression test.
-- [ ] Removing the label while approval is pending prevents a fix.
+- [ ] Closing the issue during the run blocks patch publication.
 - [ ] Native fixes requiring unavailable Xcode tests are blocked rather than
       claiming validation.
 - [ ] The output cannot change workflows, dependencies/lockfiles, migrations,
@@ -207,18 +227,23 @@ Acceptance:
 ## Activation and operations checklist
 
 - [ ] Merge workflow sources, shared components, and compiled locks onto the
-      default branch. Dispatch and workflow-run/issue events require registration
-      there. Keep `dev` available as the draft-PR base.
+      default branch. Run workflow buttons require registration there.
+      Keep `dev` available as the draft-PR base.
 - [ ] Approve the repository's use of Copilot for code/test/log analysis under
       the team's data-handling policy. Never use participant material.
 - [ ] Configure the supported `COPILOT_GITHUB_TOKEN` Actions secret with Copilot
       access through approved secret administration. Never paste it into code,
       issues, logs, or chat. No `LOVABLE_API_KEY` is used by these CI agents.
+- [ ] Configure `GH_AW_GITHUB_MCP_SERVER_TOKEN` as a separate fine-grained PAT
+      with repository access limited to this repository and **Contents, Issues,
+      Pull requests, Actions: Read**. The remote GitHub-tools mode needs this
+      additional authentication; a Copilot-only token cannot replace it.
+      Grant the transferred organization repository explicitly and obtain any
+      required organization approval. Never paste either token into chat.
 - [ ] Allow GitHub Actions to create pull requests in repository settings.
       Keep normal team approval and required CI on protected branches.
-- [ ] Create label `agentic-fix` and environment `agentic-changes`; configure
-      required independent human reviewers and prevent self-review. Restrict
-      environment branches to `dev` and the default branch as appropriate.
+- [ ] Confirm the compiled agents have only `workflow_dispatch` triggers and no
+      environment references. No environment/label setup is required.
 - [ ] Set `AGENTIC_WORKFLOWS_ENABLED=true` only after the above steps.
 - [ ] Complete each workflow's acceptance scenarios using synthetic test PRs
       and issues; remove deliberate failures afterwards.
@@ -244,8 +269,8 @@ npm test
 npx --no-install tsc --noEmit
 ```
 
-Use a virtual environment for the Python dependency. Local verification covered
-14 workflow-policy tests (including executed label/state authorization gates),
+Use a virtual environment for the Python dependency. The initial implementation
+verification covered 14 workflow-policy tests,
 all 33 frontend tests (including eight evaluation tests), TypeScript checking,
 production build, synthetic evaluation, all 33 native
 simulator tests, and an unsigned Release simulator build. Compilation/schema
@@ -258,9 +283,51 @@ tests or verify the GitHub-hosted runner image.
 The frozen install, frontend tests, typecheck, and build were also repeated in an
 isolated tracked-source copy with the exact Bun 1.3.2 and lockfile used by CI.
 
-Use the Actions UI to manually run documentation drift against `dev`. To request
-a bug fix, apply `agentic-fix` to a reproducible issue and approve the environment
-deployment after checking scope. Agent-created PRs using `GITHUB_TOKEN` may not
+The solo-maintainer revision adds local validation of all six manual-only
+triggers and 17 policy tests, including executed numeric input, issue state,
+PR snapshot/staleness/fork, and selected CI-run gates. Application/native code
+is unchanged by this revision; the earlier application test results above are
+historical, not a claim that those suites were rerun for the workflow-only change.
+Live dispatch and authentication still need a separately authorized smoke test.
+
+## Solo maintainer: running an individual agent
+
+1. Publish these changes to `main` through a reviewed PR. Do not select an
+   untrusted PR branch as the workflow source.
+2. Verify both repository Actions secrets and enable Actions PR creation.
+3. Set repository **Actions variable** `AGENTIC_WORKFLOWS_ENABLED` to `true`.
+4. Open **Actions**, select one of the six **Agent - ...** workflows, then
+   **Run workflow**. Leave **Use workflow from** on `main`.
+5. Supply the numeric target below, then click **Run workflow**. This starts
+   execution immediately, without a separate approval prompt.
+6. Inspect the summary, exact SHAs, tests, and generated comment/issue/draft PR.
+   Review proposed changes and require CI before merging. Re-run a PR review
+   manually after new commits; there are no automatic agent follow-ups.
+
+| Workflow | Required input | Result |
+|---|---|---|
+| Native/web contract review | `pr_number` | Comment on selected PR, or summary |
+| Accessible conversation tester | `pr_number` | Comment on selected PR, or summary |
+| ASL evaluation analyst | `pr_number` | Comment on selected PR, or summary |
+| CI failure investigator | `run_id` | Deduplicated investigation issue, or summary |
+| Documentation drift reviewer | None | Draft docs PR targeting `dev`, or summary |
+| Issue to regression test | `issue_number` | Tested draft fix PR targeting `dev`, or summary |
+
+Use the number only, not a URL or `#` prefix. Find a run ID in
+`https://github.com/<owner>/<repo>/actions/runs/<run_id>`.
+For example, after activation:
+
+```sh
+gh workflow run agent-contract-review.lock.yml --ref main -f pr_number=123
+gh workflow run agent-issue-regression.lock.yml --ref main -f issue_number=456
+gh workflow run agent-ci-investigator.lock.yml --ref main -f run_id=123456789
+gh workflow run agent-docs-drift.lock.yml --ref main
+```
+
+These commands have external side effects and consume Actions/Copilot quota.
+Do not run them just to validate compilation. Cancel unwanted runs in Actions.
+
+Agent-created PRs using `GITHUB_TOKEN` may not
 trigger ordinary PR CI automatically; a maintainer must arrange a trusted CI run
 (for example by pushing a reviewed commit) before approval/merge. Do not bypass
 required checks or grant a broad personal token just to trigger CI.

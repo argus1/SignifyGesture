@@ -11,6 +11,12 @@ xcodegen generate --spec iOSApp/project.yml
 
 Do not edit the generated project file directly.
 
+For TestFlight, set the version in `iOSApp/project.yml` (`MARKETING_VERSION`,
+currently `0.2.0`) before regenerating the project and creating a new Release
+archive. Set `CURRENT_PROJECT_VERSION` (currently `4`) there for the build number.
+The app and Messages extension inherit both values. Xcode-only version
+changes are overwritten by regeneration; existing archives are unchanged.
+
 ## Local conversation memory (Issue #17, first increment)
 
 GRDB is resolved through Swift Package Manager from `iOSApp/project.yml`.
@@ -107,6 +113,17 @@ contains a 1024-by-1024, opaque PNG with the Signify mark centered on white;
 Xcode produces the required iPhone and iPad icon sizes from it. The original
 vector mark is also available as the `SignifyMark` image asset. When changing
 the artwork, update both assets and keep the app icon square and opaque.
+
+The Messages extension has a separate `MessagesIcon.stickersiconset` in
+`iOSApp/MessagesExtension/Assets.xcassets`, selected by its
+`ASSETCATALOG_COMPILER_APPICON_NAME` setting in `iOSApp/project.yml`.
+It reuses the main app artwork, centered on an opaque white rectangular canvas,
+with every Messages icon size and a 1024-by-768 store icon. Keep these renditions
+in sync when updating the artwork. The Messages icon appears inside Messages;
+it does not replace the main app's Home Screen icon. The Messages-specific target
+type and asset compiler generate `MSMessagesExtensionStoreIconName` and the
+icon metadata in the built extension's Info.plist; do not hardcode a missing
+icon reference in the source plist. Create a new archive after icon changes.
 
 ## Debug-only trial capture (local export; no AWS upload)
 
@@ -303,6 +320,8 @@ provisioning profiles, or signing credentials.
 
 The registered app bundle identifier is `com.argussun.signifygesture2` for both
 Debug and Release; the unit-test bundle uses `com.argussun.signifygesture2.tests`.
+The embedded Messages extension uses `com.argussun.signifygesture2.messages2`
+in both configurations.
 `iOSApp/project.yml` is the source of truth. Changes made only in Xcode's
 Signing & Capabilities panel are overwritten when XcodeGen regenerates the
 project. Native CI checks both configurations after generation.
@@ -318,8 +337,9 @@ After pulling a bundle-identifier correction:
 
 1. Run `xcodegen generate --spec iOSApp/project.yml` and reopen
    `iOSApp/SignifyGesture.xcodeproj`.
-2. Select the app target and confirm the registered identifier and the correct
-   development team in **Signing & Capabilities**, including Release.
+2. Select both the app and Messages extension targets and confirm their
+   identifiers and the correct development team in **Signing & Capabilities**,
+   including Release.
 3. Use a team-reachable deployed `SIGNIFY_FRONTEND_URL` for distribution, not
    the simulator's localhost default or a developer-only LAN override.
 4. Select a generic iOS device and choose **Product > Archive** to create a
@@ -330,9 +350,15 @@ After pulling a bundle-identifier correction:
    ```sh
    /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
      '<archive-path>.xcarchive/Products/Applications/SignifyGesture.app/Info.plist'
+   /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' \
+     '<archive-path>.xcarchive/Products/Applications/SignifyGesture.app/PlugIns/SignifyMessages.appex/Info.plist'
    ```
 
-   It must print `com.argussun.signifygesture2`. Then choose **Distribute App >
+   These must print `com.argussun.signifygesture2` and
+   `com.argussun.signifygesture2.messages2`, respectively. If Xcode still reports
+   an old identifier, close and reopen the regenerated project, choose
+   **Product > Clean Build Folder**, and create a new archive rather than
+   retrying an older Organizer entry. Then choose **Distribute App >
    App Store Connect** and validate/upload it to the matching App Store Connect
    app record. Uploading does not regenerate the project or change an archive's
    bundle identifier.

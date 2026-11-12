@@ -11,46 +11,39 @@ permissions:
   issues: read
   pull-requests: read
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "src/components/signify/**"
-      - "src/routes/**"
-      - "src/styles.css"
-      - "src/lib/signify-store.tsx"
-      - "src/lib/nativeBridge.ts"
-      - "src/lib/speechStatus.ts"
-      - "src/types/nativeBridge.ts"
-      - "src/test/**"
-      - "Docs/ACCESSIBLE_CONVERSATION_FLOW.md"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Open same-repository PR number to test"
+        required: true
+        type: string
   roles: [admin, maintain, write]
-if: vars.AGENTIC_WORKFLOWS_ENABLED == 'true' && github.event.pull_request.draft == false
+if: vars.AGENTIC_WORKFLOWS_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
 imports:
   - .github/aw/common.md
   - .github/aw/frontend-tools.md
-checkout:
-  fetch-depth: 0
+  - .github/aw/manual-pr.md
 tools:
   edit:
 concurrency:
-  group: agent-accessibility-${{ github.event.pull_request.number }}
+  group: agent-accessibility-${{ inputs.pr_number }}
   cancel-in-progress: true
+  job-discriminator: ${{ github.run_id }}
 safe-outputs:
   report-incomplete: false
   report-missing-data: false
   report-missing-tool: false
   add-comment:
     max: 1
-    target: triggering
+    target: "${{ inputs.pr_number }}"
     replace-older-comments: true
 ---
 
 # Test accessible conversation transitions
 
-Inspect PR #${{ github.event.pull_request.number }}, head
-`${{ github.event.pull_request.head.sha }}` versus
-`${{ github.event.pull_request.base.sha }}` and
+Inspect the manually selected PR at the shared head/base SHAs and
 Docs/ACCESSIBLE_CONVERSATION_FLOW.md. Use synthetic native bridge events only.
+Create the selected-head sandbox worktree before installing or running tests.
 
 Install frozen dependencies, then run:
 `npm test -- src/test/speech-flow.test.tsx src/test/recognition-status.test.tsx src/test/camera-lifecycle.test.tsx src/test/app-routing.test.tsx src/test/repair-agent.test.ts src/test/native-bridge.test.ts`.

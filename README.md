@@ -39,8 +39,10 @@ public SSH access.
 
 See the [agentic workflows development plan](Docs/agentic-workflows.md) for the
 six bounded agents, acceptance checklists, deterministic CI, and activation
-requirements. Agents are disabled until explicitly enabled; code-writing agents
-also require a protected approval environment and only create draft PRs.
+requirements. All six agents run individually through **Actions → Run workflow**
+on `main`, after explicit enablement. Manual launch is the solo maintainer's
+authorization; no protected environment or opt-in label is required.
+Code-writing agents only create draft PRs targeting `dev`, never merge them.
 
 ## Repeatable evaluation fixtures
 

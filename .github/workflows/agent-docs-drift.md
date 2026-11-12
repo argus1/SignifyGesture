@@ -11,19 +11,9 @@ permissions:
   issues: read
   pull-requests: read
 on:
-  push:
-    branches: [dev]
-    paths:
-      - "src/**"
-      - "iOSApp/Sources/**"
-      - "iOSApp/Config/Frontend.xcconfig"
-      - "iOSApp/project.yml"
-      - "package.json"
-      - "scripts/evaluate-asl.ts"
   workflow_dispatch:
   roles: [admin, maintain, write]
-  manual-approval: agentic-changes
-if: vars.AGENTIC_WORKFLOWS_ENABLED == 'true' && github.ref == 'refs/heads/dev'
+if: vars.AGENTIC_WORKFLOWS_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
 imports:
   - .github/aw/common.md
 checkout:
@@ -34,6 +24,7 @@ tools:
 concurrency:
   group: agent-docs-drift
   cancel-in-progress: false
+  job-discriminator: ${{ github.run_id }}
 safe-outputs:
   report-incomplete: false
   report-missing-data: false
@@ -61,9 +52,9 @@ safe-outputs:
 
 # Correct verified documentation drift
 
-This task has received the agentic-changes environment approval. Work on dev
-only. Inspect the latest 20 commits within the fetched history, emphasizing the
-triggering push when present, and compare actual tracked implementation with
+The maintainer explicitly authorized this task by manual dispatch. Work on dev
+only. Inspect the latest 20 commits within the fetched history and
+compare actual tracked implementation with
 README.md and the explicitly allowlisted documentation.
 
 Read relevant source/config as evidence only; never execute application code,

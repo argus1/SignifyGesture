@@ -11,43 +11,35 @@ permissions:
   issues: read
   pull-requests: read
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "src/types/nativeBridge.ts"
-      - "src/lib/nativeBridge.ts"
-      - "src/lib/signify-store.tsx"
-      - "src/lib/speechStatus.ts"
-      - "iOSApp/Sources/NativeBridge/**"
-      - "iOSApp/Sources/Speech/**"
-      - "iOSApp/Sources/Camera/**"
-      - "iOSApp/Sources/Inference/**"
-      - "iOSApp/Tests/**"
-      - "src/test/**"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Open same-repository PR number to review"
+        required: true
+        type: string
   roles: [admin, maintain, write]
-if: vars.AGENTIC_WORKFLOWS_ENABLED == 'true' && github.event.pull_request.draft == false
+if: vars.AGENTIC_WORKFLOWS_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
 imports:
   - .github/aw/common.md
-checkout:
-  fetch-depth: 0
+  - .github/aw/manual-pr.md
 concurrency:
-  group: agent-contract-${{ github.event.pull_request.number }}
+  group: agent-contract-${{ inputs.pr_number }}
   cancel-in-progress: true
+  job-discriminator: ${{ github.run_id }}
 safe-outputs:
   report-incomplete: false
   report-missing-data: false
   report-missing-tool: false
   add-comment:
     max: 1
-    target: triggering
+    target: "${{ inputs.pr_number }}"
     replace-older-comments: true
 ---
 
 # Review native/web contract changes
 
-Review PR #${{ github.event.pull_request.number }} at head
-`${{ github.event.pull_request.head.sha }}` against base
-`${{ github.event.pull_request.base.sha }}`. Use the PR diff and tracked sources.
+Review the manually selected PR at the head/base SHAs in the shared instructions.
+Use the PR diff and tracked sources at those exact revisions.
 Check both src/types/nativeBridge.ts and src/lib/nativeBridge.ts against
 iOSApp/Sources/NativeBridge/NativeBridgeCoordinator.swift and native callers,
 then verify src/lib/signify-store.tsx consumers and both test suites.
