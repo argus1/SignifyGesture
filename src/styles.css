@@ -97,7 +97,7 @@
   --tab-bar-height: 69px;
   --tab-bar-bottom: 31px;
   --tab-bar-clearance: calc(var(--tab-bar-height) + var(--tab-bar-bottom));
-  --scroll-fade: linear-gradient(to bottom, transparent, var(--background));
+  --tab-bar-shadow: 0 8px 24px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
   --radius: 1.5rem;
   --background: #ffffff;
   --foreground: #000000;
@@ -219,8 +219,6 @@
   html.theme-fade, html.theme-fade * { transition: background-color 250ms ease, border-color 250ms ease, color 250ms ease !important; }
 }
 @keyframes load-bar { from { width: 0 } to { width: 100% } }
-
-.scroll-bottom-fade { background: var(--scroll-fade); }
 
 /* Inside the iOS wrapper, let the native camera layer show through camera screens. */
 html[data-native-host],

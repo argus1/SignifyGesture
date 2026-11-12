@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { BookOpen, ChevronRight, Play } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CameraViewport } from "@/components/signify/CameraViewport";
 import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
@@ -30,29 +30,10 @@ type CaptureState = "idle" | "capturing" | "captured";
 function Learn() {
   const { sign } = Route.useSearch();
   const selectedSign = sign ?? SIGNS[0] ?? "Hello";
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [hasMoreBelow, setHasMoreBelow] = useState(false);
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [frames, setFrames] = useState(0);
   const [trial, setTrial] = useState(INITIAL_TRIAL);
   const usablePercent = simulatedUsablePercentage(frames);
-
-  useEffect(() => {
-    const scrollArea = scrollRef.current;
-    if (!scrollArea) return;
-    const update = () => {
-      setHasMoreBelow(scrollArea.scrollHeight - scrollArea.clientHeight - scrollArea.scrollTop > 1);
-    };
-    update();
-    scrollArea.addEventListener("scroll", update, { passive: true });
-    const observer = new ResizeObserver(update);
-    observer.observe(scrollArea);
-    for (const child of scrollArea.children) observer.observe(child);
-    return () => {
-      scrollArea.removeEventListener("scroll", update);
-      observer.disconnect();
-    };
-  }, []);
 
   useEffect(() => {
     setCaptureState("idle");
@@ -85,7 +66,6 @@ function Learn() {
       <Header />
       <div className="relative min-h-0 flex-1">
         <div
-          ref={scrollRef}
           aria-label="Learn ASL practice content"
           className="h-full overflow-y-auto overscroll-contain pb-[calc(var(--tab-bar-clearance)+24px)]"
         >
@@ -207,13 +187,6 @@ function Learn() {
             </Link>
           </div>
         </div>
-        {hasMoreBelow && (
-          <div
-            aria-hidden="true"
-            data-scroll-fade
-            className="scroll-bottom-fade pointer-events-none absolute inset-x-0 bottom-[var(--tab-bar-clearance)] z-20 h-12"
-          />
-        )}
       </div>
       <TabBar />
     </Screen>

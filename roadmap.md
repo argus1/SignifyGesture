@@ -9,5 +9,6 @@
 # Phone layout repair
 
 - [x] Pin the shared tab bar and constrain phone content to the viewport.
-- [x] Give Learn ASL an inner scroll area with bottom clearance and an end-aware fade.
+- [x] Give Learn ASL an inner scroll area with bottom clearance.
 - [x] Verify Home, Memory, Messages, Community, Learn ASL, and Consent at 390×844.
+- [x] Remove the bottom fade and use only the shared tab bar's subtle diffuse shadow.
