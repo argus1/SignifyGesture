@@ -12,11 +12,13 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CaptionsRouteImport } from './routes/captions'
 import { Route as CommunityRouteImport } from './routes/community'
+import { Route as ContributeRouteImport } from './routes/contribute'
 import { Route as HomeRouteImport } from './routes/home'
 import { Route as LearnRouteImport } from './routes/learn'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as RecapRouteImport } from './routes/recap'
+import { Route as ResearchLoginRouteImport } from './routes/research-login'
 import { Route as SignRouteImport } from './routes/sign'
 import { Route as SpeakRouteImport } from './routes/speak'
 import { Route as TranslateRouteImport } from './routes/translate'
@@ -35,6 +37,11 @@ const CaptionsRoute = CaptionsRouteImport.update({
 const CommunityRoute = CommunityRouteImport.update({
   id: '/community',
   path: '/community',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContributeRoute = ContributeRouteImport.update({
+  id: '/contribute',
+  path: '/contribute',
   getParentRoute: () => rootRouteImport,
 } as any)
 const HomeRoute = HomeRouteImport.update({
@@ -62,6 +69,11 @@ const RecapRoute = RecapRouteImport.update({
   path: '/recap',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ResearchLoginRoute = ResearchLoginRouteImport.update({
+  id: '/research-login',
+  path: '/research-login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SignRoute = SignRouteImport.update({
   id: '/sign',
   path: '/sign',
@@ -87,11 +99,13 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/captions': typeof CaptionsRoute
   '/community': typeof CommunityRoute
+  '/contribute': typeof ContributeRoute
   '/home': typeof HomeRoute
   '/learn': typeof LearnRoute
   '/memory': typeof MemoryRoute
   '/messages': typeof MessagesRoute
   '/recap': typeof RecapRoute
+  '/research-login': typeof ResearchLoginRoute
   '/sign': typeof SignRoute
   '/speak': typeof SpeakRoute
   '/translate': typeof TranslateRoute
@@ -101,11 +115,13 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/captions': typeof CaptionsRoute
   '/community': typeof CommunityRoute
+  '/contribute': typeof ContributeRoute
   '/home': typeof HomeRoute
   '/learn': typeof LearnRoute
   '/memory': typeof MemoryRoute
   '/messages': typeof MessagesRoute
   '/recap': typeof RecapRoute
+  '/research-login': typeof ResearchLoginRoute
   '/sign': typeof SignRoute
   '/speak': typeof SpeakRoute
   '/translate': typeof TranslateRoute
@@ -116,11 +132,13 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/captions': typeof CaptionsRoute
   '/community': typeof CommunityRoute
+  '/contribute': typeof ContributeRoute
   '/home': typeof HomeRoute
   '/learn': typeof LearnRoute
   '/memory': typeof MemoryRoute
   '/messages': typeof MessagesRoute
   '/recap': typeof RecapRoute
+  '/research-login': typeof ResearchLoginRoute
   '/sign': typeof SignRoute
   '/speak': typeof SpeakRoute
   '/translate': typeof TranslateRoute
@@ -132,11 +150,13 @@ export interface FileRouteTypes {
     | '/'
     | '/captions'
     | '/community'
+    | '/contribute'
     | '/home'
     | '/learn'
     | '/memory'
     | '/messages'
     | '/recap'
+    | '/research-login'
     | '/sign'
     | '/speak'
     | '/translate'
@@ -146,11 +166,13 @@ export interface FileRouteTypes {
     | '/'
     | '/captions'
     | '/community'
+    | '/contribute'
     | '/home'
     | '/learn'
     | '/memory'
     | '/messages'
     | '/recap'
+    | '/research-login'
     | '/sign'
     | '/speak'
     | '/translate'
@@ -160,11 +182,13 @@ export interface FileRouteTypes {
     | '/'
     | '/captions'
     | '/community'
+    | '/contribute'
     | '/home'
     | '/learn'
     | '/memory'
     | '/messages'
     | '/recap'
+    | '/research-login'
     | '/sign'
     | '/speak'
     | '/translate'
@@ -175,11 +199,13 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CaptionsRoute: typeof CaptionsRoute
   CommunityRoute: typeof CommunityRoute
+  ContributeRoute: typeof ContributeRoute
   HomeRoute: typeof HomeRoute
   LearnRoute: typeof LearnRoute
   MemoryRoute: typeof MemoryRoute
   MessagesRoute: typeof MessagesRoute
   RecapRoute: typeof RecapRoute
+  ResearchLoginRoute: typeof ResearchLoginRoute
   SignRoute: typeof SignRoute
   SpeakRoute: typeof SpeakRoute
   TranslateRoute: typeof TranslateRoute
@@ -207,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: '/community'
       fullPath: '/community'
       preLoaderRoute: typeof CommunityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contribute': {
+      id: '/contribute'
+      path: '/contribute'
+      fullPath: '/contribute'
+      preLoaderRoute: typeof ContributeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/home': {
@@ -244,6 +277,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecapRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/research-login': {
+      id: '/research-login'
+      path: '/research-login'
+      fullPath: '/research-login'
+      preLoaderRoute: typeof ResearchLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sign': {
       id: '/sign'
       path: '/sign'
@@ -279,11 +319,13 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CaptionsRoute: CaptionsRoute,
   CommunityRoute: CommunityRoute,
+  ContributeRoute: ContributeRoute,
   HomeRoute: HomeRoute,
   LearnRoute: LearnRoute,
   MemoryRoute: MemoryRoute,
   MessagesRoute: MessagesRoute,
   RecapRoute: RecapRoute,
+  ResearchLoginRoute: ResearchLoginRoute,
   SignRoute: SignRoute,
   SpeakRoute: SpeakRoute,
   TranslateRoute: TranslateRoute,

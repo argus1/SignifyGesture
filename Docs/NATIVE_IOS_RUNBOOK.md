@@ -162,6 +162,15 @@ Lovable learning-game UI can open the same screen by calling
 `window.NativeASLBridge.openPrivacyAndAccount()` command. No game UI is
 implemented in Swift.
 
+The imported Lovable **Learn ASL** screen is still a UI prototype: its 120-frame
+progress and usable-frame percentage are simulated, and the play area is not
+connected to an authorized demonstration video. It does not save practice
+captures or call the native trial recorder. In the native app, **Contribute to
+ASL research** opens a page whose **Privacy & account** button presents the
+existing Swift consent/Cognito screen; the browser-only prototype consent form
+does not grant native consent. Native game capture and quality metrics remain
+separate work in issue #30.
+
 The optional `window.NativeASLBridge.onCaptureConsentChange({ consentGranted })`
 callback receives the current consent when the web command opens the screen,
 and subsequent consent changes. The Lovable game should default to fun-only

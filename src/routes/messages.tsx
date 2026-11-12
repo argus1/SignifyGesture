@@ -1,8 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Search, PenSquare } from "lucide-react";
+import { Search, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { TopBar, Avatar, TabBar, PageTitle } from "@/components/signify/ui";
+import {
+  Header,
+  HeaderIconButton,
+  Avatar,
+  TabBar,
+  PageTitle,
+  Screen,
+} from "@/components/signify/ui";
 import { THREADS } from "@/lib/sample-data";
 import { seo } from "@/lib/seo";
 
@@ -11,39 +18,70 @@ export const Route = createFileRoute("/messages")({
   component: Messages,
 });
 
+/** 13 Messages. */
 function Messages() {
   const [q, setQ] = useState("");
-  const list = THREADS.filter((t) => `${t.name} ${t.preview}`.toLowerCase().includes(q.toLowerCase()));
+  const list = THREADS.filter((t) =>
+    `${t.name} ${t.preview}`.toLowerCase().includes(q.toLowerCase()),
+  );
   return (
-    <div className="flex flex-1 flex-col">
-      <TopBar />
-      <PageTitle title="Messages" helpFocusId="help-destination-messages" action={
-        <button aria-label="New message" onClick={() => toast("New message coming soon")}
-          className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-primary focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40">
-          <PenSquare className="h-5 w-5" />
-        </button>
-      } />
-      <div className="relative mx-5 mt-4">
-        <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-        <label htmlFor="msg-search" className="sr-only">Search</label>
-        <input id="msg-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search"
-          className="h-11 w-full rounded-full bg-muted pl-10 pr-4 text-sm outline-none focus-visible:ring-4 focus-visible:ring-ring/40" />
+    <Screen kind="tab">
+      <Header
+        right={
+          <HeaderIconButton
+            icon={Pencil}
+            label="New message"
+            onClick={() => toast("New message coming soon")}
+          />
+        }
+      />
+      <div className="min-h-0 flex-1 overflow-y-auto pb-6">
+        <PageTitle title="Messages" helpFocusId="help-destination-messages" />
+        <div className="relative mx-5 mt-[39px]">
+          <Search
+            className="pointer-events-none absolute left-[23px] top-1/2 h-[11px] w-[11px] -translate-y-1/2 text-chevron"
+            aria-hidden
+          />
+          <label htmlFor="msg-search" className="sr-only">
+            Search people or messages
+          </label>
+          <input
+            id="msg-search"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search people or messages"
+            className="h-12 w-full rounded-full border border-line bg-card pl-[46px] pr-4 text-[16px] outline-none placeholder:font-label placeholder:text-[11px] placeholder:uppercase placeholder:tracking-[0.12em] placeholder:text-ink-3 focus:border-primary"
+          />
+        </div>
+        <ul className="mt-7 px-5 pb-4">
+          {list.map((t) => (
+            <li key={t.id}>
+              <Link
+                to="/messages/$id"
+                params={{ id: t.id }}
+                className="flex h-[76px] items-start gap-4 rounded-3xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              >
+                <Avatar label={t.name} />
+                <div className="min-w-0 flex-1 pt-0.5">
+                  <p className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-[16px] font-medium">{t.name}</span>
+                    <span className="t-label shrink-0 text-ink-3">{t.time}</span>
+                  </p>
+                  <p className="flex items-start justify-between gap-2">
+                    <span className="truncate text-[14px] text-ink-4">{t.preview}</span>
+                    {t.unread && (
+                      <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-primary">
+                        <span className="sr-only">Unread</span>
+                      </span>
+                    )}
+                  </p>
+                </div>
+              </Link>
+            </li>
+          ))}
+        </ul>
       </div>
-      <ul className="mt-2 px-3 pb-4">
-        {list.map((t, i) => (
-          <li key={t.id}>
-            <Link to="/messages/$id" params={{ id: t.id }} className="flex items-center gap-3 rounded-3xl p-3 active:bg-muted">
-              <Avatar label={t.name} size={48} tone={i} />
-              <div className="min-w-0 flex-1">
-                <p className="flex justify-between gap-2"><span className="truncate font-bold">{t.name}</span><span className="shrink-0 text-xs text-muted-foreground">{t.time}</span></p>
-                <p className={t.unread ? "truncate text-sm font-semibold" : "truncate text-sm text-muted-foreground"}>{t.preview}</p>
-              </div>
-              {t.unread && <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-primary"><span className="sr-only">Unread</span></span>}
-            </Link>
-          </li>
-        ))}
-      </ul>
       <TabBar />
-    </div>
+    </Screen>
   );
 }

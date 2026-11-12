@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowUpDown, Loader2, Hand, Keyboard, X, Send, ALargeSmall } from "lucide-react";
+import { ArrowUpDown, Loader2, Keyboard, X, Send, ALargeSmall } from "lucide-react";
+import { SmallHandIcon } from "@/components/signify/icons";
 import { useSignify } from "@/lib/signify-store";
 import { IconButton, StatusPill } from "@/components/signify/ui";
 import { seo } from "@/lib/seo";
@@ -58,7 +59,7 @@ function Captions() {
           <div className="flex items-center gap-3">
             <button onClick={() => nav({ to: "/sign" })}
               className="flex min-h-14 flex-1 items-center justify-center gap-2 rounded-full bg-primary text-base font-semibold focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-ring/40">
-              <Hand className="h-5 w-5" /> Sign back
+              <SmallHandIcon className="h-5 w-auto" aria-hidden /> Sign back
             </button>
             <IconButton icon={Keyboard} label="Type a reply" size={56} onClick={() => setTyping(true)} />
           </div>

@@ -15,6 +15,8 @@ vi.mock("@tanstack/react-router", async (original) => ({
 }));
 vi.mock("@/components/signify/ui", () => ({
   TopBar: () => null,
+  Header: () => null,
+  Screen: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   TabBar: () => null,
   PageTitle: ({ title }: { title: string }) => <h1>{title}</h1>,
   Pill: ({
