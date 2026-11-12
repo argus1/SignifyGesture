@@ -125,10 +125,64 @@ type and asset compiler generate `MSMessagesExtensionStoreIconName` and the
 icon metadata in the built extension's Info.plist; do not hardcode a missing
 icon reference in the source plist. Create a new archive after icon changes.
 
+## Production camera overlays
+
+Debug and Release builds automatically draw live hand landmarks over the signing
+camera preview. Blue denotes the anatomical left hand and orange the right hand.
+Drawing preserves selfie mirroring, accounts for the preview's aspect-fill crop
+and relative capture/preview rotation, and never changes model coordinates.
+Only the latest frame is held in memory; tracking loss or camera stop clears it,
+and snapshots older than half a second are not drawn. No consent, login, export,
+or network request is needed for this overlay.
+
+A fixed mint **sparkles** button opens **Sign transcription models** while the
+camera preview is active. **Signify CoreML** and **Hand Gesture LTSMmp** are both
+disabled placeholders, not available models. Opening this menu does not change
+recognition or invoke either stub. Each entry must remain disabled until its own
+production integration is verified. Stopping the camera removes the button.
+The old top camera/debug bar is hidden by default, including in Debug builds;
+the landmark overlay, sparkles menu and privacy/account button remain available.
+Use the frontend camera controls to start/stop capture.
+
+Issue #30 tracks the learning-game UI, which the team owns in Lovable, not
+SwiftUI. Native Swift owns camera/landmark processing and the dedicated
+privacy/account screen. The existing consented trial recorder remains Debug-only for now, with
+its existing 120-frame maximum, manual stop, 10-second bound, and minimum of
+16 frames for review. The learning curriculum and usable-capture criteria still
+require team approval. Synthetic geometry and simulator UI checks do not replace
+physical-iPhone overlay-alignment and accessibility verification.
+
+## Native privacy and Cognito account screen
+
+The **Privacy & account** hand button opens the dedicated SwiftUI screen in
+Debug and Release, even when the camera is off. Consent is session-only and off
+by default; opening the screen or signing in does not grant consent. The
+Lovable learning-game UI can open the same screen by calling
+`openPrivacyAndAccount()` from `src/lib/nativeBridge.ts`, or the injected
+`window.NativeASLBridge.openPrivacyAndAccount()` command. No game UI is
+implemented in Swift.
+
+The optional `window.NativeASLBridge.onCaptureConsentChange({ consentGranted })`
+callback receives the current consent when the web command opens the screen,
+and subsequent consent changes. The Lovable game should default to fun-only
+behavior and gate any retention/export at the data boundary; no production game
+capture/storage bridge is implemented yet. JavaScript cannot grant consent.
+Credentials and tokens never cross this bridge.
+
+Withdrawal immediately switches consent off and clears the native Debug
+recorder's active/pending/accepted trials and internal export. Cleanup errors
+are shown and block re-enabling consent until deletion succeeds. External
+exported copies must still be deleted by the collector. No upload is implemented.
+The screen uses mint accents, white cards and black text; native system fonts
+are used until licensed Be Vietnam Pro/Sora assets are bundled.
+
 ## Debug-only trial capture (local export; no AWS upload)
 
-In a **Debug** build, start the native camera, then choose **Debug → Capture
-trials** in the native camera toolbar. Release builds do not include the recorder or its UI.
+In a **Debug** build, enable the `-SignifyShowCameraDebugBar` launch argument in
+Xcode's scheme (or pass it when launching with `devicectl`). Start the native
+camera, then choose **Debug → Capture trials** in the native camera toolbar.
+The bar is hidden without that argument. Release builds do not include the bar,
+recorder or its UI.
 This capture path uses native Vision landmarks, not browser camera/ML and not
 recognizer output, so a missing recognition model does not block collection.
 
@@ -146,16 +200,18 @@ xcrun devicectl device process launch --device '<device-identifier>' \
   com.argussun.signifygesture2
 ```
 
-The native toolbar appears only while the camera is active. **Debug → Landmarks**
+The opt-in native toolbar appears only while the camera is active. **Debug → Landmarks**
 opens the live hand skeleton inspector; **Debug → Capture trials** opens the
-consented recorder. Installing a Release build hides both tools, regardless of
-which frontend is deployed. Reinstall Debug to restore them; do not enable
+consented recorder. Installing a Release build hides both Debug tools, regardless of
+which frontend is deployed. Use Debug plus the launch argument to restore them; do not enable
 training-data capture in ordinary distribution builds to work around this.
 
 On the simulator, Debug builds replace the camera with a mock (gradient preview
 plus synthetic landmark frames) so the Debug menu and trial capture can be
 exercised without hardware. Launch with `-SignifyMockCamera` to start it
-automatically. The `SignifyGestureUITests` scheme checks that the Debug menu,
+automatically, plus `-SignifyShowCameraDebugBar` to expose the developer toolbar.
+The `SignifyGestureUITests` scheme checks the bar is hidden by default and that
+the opted-in Debug menu,
 trial form, Start/Stop and review controls stay reachable in portrait and
 landscape (it does not validate real capture; do that on device):
 
@@ -168,11 +224,13 @@ xcodebuild test -project iOSApp/SignifyGesture.xcodeproj \
 1. Follow the [P07 consent/storage protocol](ASL_translation_hackathon_plan.md#p07-fixture-protocol)
    before capture. Explain the collector, private withdrawal route, purpose,
    partition and deletion deadline. The participant must affirm consent; camera
-   permission is not consent to retain training/evaluation samples.
+   permission is not consent to retain training/evaluation samples. Open
+   **Privacy & account** from the trial form to review and grant session consent.
 2. Select a pseudonym `S01`–`S99`, partition and one of the five scoped glosses.
    Do not enter names. Use the same signer code consistently across sessions;
    never reuse a code for a different person. Keep identity lookup separate,
-   private and out of exports. Changing the signer resets the consent toggle.
+   private and out of exports. Changing the signer withdraws session consent and
+   clears the session's local data; export approved trials first if needed.
 3. Choose **Start trial**, sign the whole isolated gloss, then **Stop and review**.
    A trial needs at least 16 frames and is bounded to 10 seconds/120 frames.
    Tracking loss, camera stop or app interruption discards an active trial rather
@@ -184,7 +242,7 @@ xcodebuild test -project iOSApp/SignifyGesture.xcodeproj \
    Accepted trials remain in memory; app termination loses unexported trials.
    Delete session/withdrawal removes all accepted and pending trials, not just
    the currently selected signer.
-5. Explicitly confirm controlled local storage, then **Prepare protected JSON
+5. In **Privacy & account**, explicitly confirm controlled local storage, then **Prepare protected JSON
    export** and **Save JSON using system share sheet**. Select only a controlled
    local destination; the system share sheet may offer cloud services and cannot
    enforce this policy. On a Mac store under ignored
@@ -233,7 +291,8 @@ upload authorization, deletion support and approved AWS provisioning.
 
 ### Cognito sign-in groundwork
 
-Debug capture exposes an optional Cognito User Pool sign-in using the hosted UI,
+The native **Privacy & account** screen exposes optional Cognito User Pool sign-in
+in Debug and Release using the hosted UI,
 OAuth authorization code flow and PKCE. It stores access/refresh tokens in the
 iOS Keychain and can refresh or revoke a session. The Cognito app client must be
 a public/native client with no client secret, authorization code grant enabled,
@@ -316,7 +375,8 @@ button rather than a blank screen.
    iOS permission prompt, and that denial provides a Settings path. Background
    the app and confirm capture stops; return to the foreground and restart from
    the frontend **Start camera** control. Both the frontend **Stop camera**
-   control and the native stop control must stop capture. Switching to Speech
+   control and, when explicitly enabled in Debug, the native stop control must
+   stop capture. Switching to Speech
    or leaving a camera screen must also stop capture.
    Camera frames remain on device.
 
@@ -501,8 +561,9 @@ upright relative to gravity, including orientation changes, before supplying
 preview's aspect-fill crop. The inspector flips only its drawing horizontally
 to match the selfie preview; model coordinates and anatomical labels are unchanged.
 
-The Debug build's Landmark Inspector draws the latest normalized frame in memory;
-it writes no camera or landmark data and clears its snapshot when capture stops.
+The production camera overlay and Debug Landmark Inspector draw the latest
+normalized frame in memory; neither writes camera or landmark data, and the
+snapshot is cleared when capture stops.
 Synthetic known-coordinate fixtures test the transform and slot ordering.
 Physical-device pose-alignment checks supplement these tests: Vision provides
 2D image-space points, not depth or a 3D hand pose, and the simulator cannot

@@ -175,20 +175,30 @@ final class CameraCaptureService: NSObject, ObservableObject {
     private var isConfigured = false
     private var lastVisionTime: TimeInterval = 0
     private let minimumFrameInterval: TimeInterval = 1.0 / 12.0
-    #if DEBUG
     private let latestLandmarkFrameLock = NSLock()
-    private var storedLatestLandmarkFrame: LandmarkFrame?
+    private var storedLatestPreviewSnapshot: LandmarkPreviewSnapshot?
 
-    var latestLandmarkFrame: LandmarkFrame? {
+    var latestPreviewSnapshot: LandmarkPreviewSnapshot? {
         latestLandmarkFrameLock.lock()
         defer { latestLandmarkFrameLock.unlock() }
-        return storedLatestLandmarkFrame
+        return storedLatestPreviewSnapshot
     }
 
-    private func storeLatestLandmarkFrame(_ frame: LandmarkFrame?) {
+    #if DEBUG
+    var latestLandmarkFrame: LandmarkFrame? { latestPreviewSnapshot?.frame }
+    #endif
+
+    private func storeLatestPreviewSnapshot(_ snapshot: LandmarkPreviewSnapshot?) {
         latestLandmarkFrameLock.lock()
-        storedLatestLandmarkFrame = frame
+        storedLatestPreviewSnapshot = snapshot
         latestLandmarkFrameLock.unlock()
+    }
+
+    #if DEBUG && targetEnvironment(simulator)
+    func showMockLandmarks(_ frame: LandmarkFrame) {
+        storeLatestPreviewSnapshot(
+            LandmarkPreviewSnapshot(frame: frame, imageSize: CGSize(width: 480, height: 640), captureRotation: 0)
+        )
     }
     #endif
 
@@ -255,9 +265,7 @@ final class CameraCaptureService: NSObject, ObservableObject {
             if self.session.isRunning {
                 self.session.stopRunning()
             }
-            #if DEBUG
-            self.storeLatestLandmarkFrame(nil)
-            #endif
+            self.frameQueue.sync { self.storeLatestPreviewSnapshot(nil) }
             DispatchQueue.main.async {
                 self.setTrackingState(.idle)
                 completion?()
@@ -379,9 +387,7 @@ extension CameraCaptureService: AVCaptureVideoDataOutputSampleBufferDelegate {
         do {
             try VNImageRequestHandler(cmSampleBuffer: sampleBuffer, orientation: .up).perform([request])
             guard let observations = request.results, !observations.isEmpty else {
-                #if DEBUG
-                storeLatestLandmarkFrame(nil)
-                #endif
+                storeLatestPreviewSnapshot(nil)
                 DispatchQueue.main.async { self.setTrackingState(.lost) }
                 return
             }
@@ -391,15 +397,19 @@ extension CameraCaptureService: AVCaptureVideoDataOutputSampleBufferDelegate {
                 timestamp: timestamp,
                 sourceIsMirrored: connection.isVideoMirrored
             )
-            #if DEBUG
-            storeLatestLandmarkFrame(frame)
-            #endif
+            if let image = CMSampleBufferGetImageBuffer(sampleBuffer) {
+                storeLatestPreviewSnapshot(LandmarkPreviewSnapshot(
+                    frame: frame,
+                    imageSize: CGSize(width: CVPixelBufferGetWidth(image), height: CVPixelBufferGetHeight(image)),
+                    captureRotation: connection.videoRotationAngle
+                ))
+            } else {
+                storeLatestPreviewSnapshot(nil)
+            }
             onPoseFrame?(frame)
             DispatchQueue.main.async { self.setTrackingState(.tracking) }
         } catch {
-            #if DEBUG
-            storeLatestLandmarkFrame(nil)
-            #endif
+            storeLatestPreviewSnapshot(nil)
             DispatchQueue.main.async {
                 self.setTrackingState(.lost)
                 self.onError?(error.localizedDescription)

@@ -6,6 +6,7 @@ import UIKit
 struct DebugTrialRecorderView: View {
     @ObservedObject var recorder: DebugTrialRecorder
     @ObservedObject var authService: CognitoAuthService
+    @ObservedObject var captureConsent: CaptureConsentState
     let cameraActive: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
@@ -14,8 +15,7 @@ struct DebugTrialRecorderView: View {
     @State private var signerID = "S01"
     @State private var split = "train"
     @State private var gloss = DebugTrialRecorder.glosses[0]
-    @State private var consent = false
-    @State private var confirmsExport = false
+    @State private var showsPrivacyAndAccount = false
     @State private var collapsed = false
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
@@ -41,10 +41,10 @@ struct DebugTrialRecorderView: View {
         .onChange(of: recorder.isRecording) { _, recording in
             collapsed = recording
         }
-        .onChange(of: signerID) { _, _ in consent = false }
-        .onChange(of: consent) { _, allowed in
-            if !allowed { recorder.interrupt("Consent removed. Trial discarded; delete the session for withdrawal.") }
+        .sheet(isPresented: $showsPrivacyAndAccount) {
+            PrivacyAndAccountView(consent: captureConsent, authService: authService, recorder: recorder)
         }
+        .onChange(of: signerID) { _, _ in captureConsent.setConsent(false) }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { recorder.interrupt("App interrupted. Trial discarded; please retry.") }
         }
@@ -52,13 +52,13 @@ struct DebugTrialRecorderView: View {
     }
 
     private var canStart: Bool {
-        consent && cameraActive && recorder.pendingTrial == nil && recorder.exportURL == nil
+        captureConsent.isGranted && cameraActive && recorder.pendingTrial == nil && recorder.exportURL == nil
     }
 
     private func startTrial() {
         perform {
             try recorder.start(signerID: signerID, split: split, gloss: gloss,
-                               consent: consent, cameraActive: cameraActive)
+                               consent: captureConsent.isGranted, cameraActive: cameraActive)
         }
     }
 
@@ -139,11 +139,9 @@ struct DebugTrialRecorderView: View {
         NavigationStack {
             Form {
                 Group {
-                    Section("Consent before capture") {
-                        Text("Pilot only: 3 signers × 5 trials × 5 glosses = 75. This is not a validated training dataset. Keep each signer in one split, including across export files; evaluation signers cannot also be training/tuning signers.")
-                        Text("Explain the purpose, collector and private withdrawal route first. Only hand landmarks, relative timestamps, gloss, signer code and split are captured; no video/audio. Landmarks may identify a person. Trials stay in memory until explicit export. Close/Delete removes this session's local data. Delete any exported copies at session end, within 24 hours, or immediately on withdrawal.")
-                        Toggle("Participant understands and consents to this session's capture", isOn: $consent)
-                            .disabled(recorder.isRecording)
+                    Section {
+                        Button("Privacy & account") { showsPrivacyAndAccount = true }
+                            .accessibilityIdentifier("trialPrivacyAccountButton")
                     }
                     Section("Trial") {
                         TextField("Signer code (S01–S99)", text: $signerID)
@@ -178,50 +176,6 @@ struct DebugTrialRecorderView: View {
                         }
                         Text("To remove an accepted participant's data, delete this session and its exported copies. No upload or AWS connection is implemented.")
                     }
-                    Section("S3 authentication (Debug)") {
-                        if authService.isAuthenticated {
-                            Label("Signed in with Cognito", systemImage: "checkmark.shield.fill")
-                            Button("Sign out of Cognito", role: .destructive) {
-                                Task { await authService.signOut() }
-                            }
-                        } else {
-                            Button(authService.isAuthenticating ? "Signing in…" : "Sign in with Cognito") {
-                                Task { await authService.signIn() }
-                            }
-                            .disabled(authService.isAuthenticating || authService.configurationMessage != nil)
-                        }
-                        if let message = authService.configurationMessage {
-                            Text(message)
-                        }
-                        if let error = authService.errorMessage {
-                            Text(error).foregroundStyle(.red)
-                        }
-                        Text("Sign-in only establishes an authenticated identity. This does not upload trials or grant direct S3 access; a backend must verify the access token and issue short-lived, per-upload authorization.")
-                    }
-                    Section("Explicit local export") {
-                        Toggle("I will save only to controlled local storage, not cloud/shared services", isOn: $confirmsExport)
-                        if let url = recorder.exportURL {
-                            ShareLink("Save JSON using system share sheet", item: url)
-                                .disabled(!confirmsExport || !consent)
-                            Button("Delete prepared export") { perform { try recorder.deleteExport() } }
-                        } else {
-                            Button("Prepare protected JSON export") {
-                                perform {
-                                    try recorder.export(
-                                        deviceModel: UIDevice.current.model,
-                                        operatingSystem: UIDevice.current.systemVersion,
-                                        directory: FileManager.default.temporaryDirectory
-                                    )
-                                }
-                            }
-                            .disabled(!confirmsExport || !consent || recorder.trials.isEmpty ||
-                                      recorder.isRecording || recorder.pendingTrial != nil)
-                        }
-                        Text("The share sheet can offer cloud destinations: do not select them. Copies saved outside the app are not deleted by this app; the collector must delete them. On the Mac use ignored local-data/consented-fixtures/. If the app is not running, expired internal files are removed at next launch, not by a background deletion service.")
-                        Button("Delete session / withdraw consent", role: .destructive) {
-                            perform { try recorder.clear(); consent = false; confirmsExport = false }
-                        }
-                    }
                     if let error = recorder.errorMessage {
                         Section("Capture / storage error") {
                             Text(error).foregroundStyle(.red).accessibilityAddTraits(.updatesFrequently)
@@ -237,6 +191,7 @@ struct DebugTrialRecorderView: View {
                         HStack {
                             Button("Discard trial", role: .destructive) { recorder.discardPending() }
                             Button("Accept trial") { perform { try recorder.accept() } }
+                                .disabled(!captureConsent.isGranted)
                         }
                     } else if recorder.isRecording {
                         HStack {
@@ -261,7 +216,12 @@ struct DebugTrialRecorderView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Delete local session and close") {
-                        perform { try recorder.clear(); dismiss() }
+                        captureConsent.setConsent(false)
+                        if let error = captureConsent.errorMessage {
+                            recorder.errorMessage = error
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
             }

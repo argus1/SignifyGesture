@@ -17,6 +17,11 @@ export function triggerCameraToggle(active: boolean) {
   post({ type: "triggerCameraToggle", active });
 }
 
+/** Present native consent and Cognito controls; no credentials are returned to JavaScript. */
+export function openPrivacyAndAccount() {
+  post({ type: "openPrivacyAndAccount" });
+}
+
 /** Ask Swift (AVSpeechSynthesizer) or AWS Polly to speak a sentence. */
 export function triggerTTSPlayback(text: string, voiceId?: string) {
   post({ type: "triggerTTSPlayback", text, voiceId });

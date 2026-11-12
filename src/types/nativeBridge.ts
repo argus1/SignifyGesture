@@ -80,6 +80,8 @@ export type NativeErrorPayload = {
 };
 
 export interface NativeASLBridge {
+  /** Session-only permission for explicit local capture; never implies upload authorization. */
+  onCaptureConsentChange?(payload: { consentGranted: boolean }): void;
   onMemoryResult(payload: unknown): void;
   onSignDetected(payload: SignDetectedPayload): void;
   onSentenceTranslated(payload: SentenceTranslatedPayload): void;
@@ -97,6 +99,7 @@ export interface NativeASLBridge {
 /** Outbound: messages posted to the Swift `aslBridge` script message handler. */
 export type OutboundMessage =
   | MemoryRequest
+  | { type: "openPrivacyAndAccount" }
   | { type: "triggerCameraToggle"; active: boolean }
   | { type: "triggerSpeechRecognition"; active: boolean }
   | { type: "triggerTTSPlayback"; text: string; voiceId?: string | undefined }

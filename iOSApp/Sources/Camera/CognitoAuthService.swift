@@ -1,4 +1,3 @@
-#if DEBUG
 import AuthenticationServices
 import Combine
 import CryptoKit
@@ -423,4 +422,3 @@ private extension Data {
             .replacingOccurrences(of: "=", with: "")
     }
 }
-#endif

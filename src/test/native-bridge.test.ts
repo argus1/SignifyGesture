@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   isNativeHost,
+  openPrivacyAndAccount,
   stopTTSPlayback,
   triggerAvatarReplay,
   triggerCameraToggle,
@@ -19,6 +20,7 @@ describe("outbound native bridge", () => {
     window.webkit = { messageHandlers: { aslBridge: { postMessage } } };
     expect(isNativeHost()).toBe(true);
     triggerCameraToggle(true);
+    openPrivacyAndAccount();
     triggerTTSPlayback("Thank you!", "en-US");
     triggerAvatarReplay(["COFFEE", "ICED"]);
     triggerSpeechRecognition(true);
@@ -26,6 +28,7 @@ describe("outbound native bridge", () => {
     triggerSpeechRecognition(false);
     expect(postMessage.mock.calls.map((c) => c[0])).toEqual([
       { type: "triggerCameraToggle", active: true },
+      { type: "openPrivacyAndAccount" },
       { type: "triggerTTSPlayback", text: "Thank you!", voiceId: "en-US" },
       { type: "triggerAvatarReplay", glossSequence: ["COFFEE", "ICED"] },
       { type: "triggerSpeechRecognition", active: true },

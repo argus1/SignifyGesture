@@ -33,6 +33,7 @@ final class NativeBridgeTests: XCTestCase, WKNavigationDelegate, WKScriptMessage
         coordinator.attach(webView: webView)
         try await evaluate("""
         window.NativeASLBridge = {
+          onCaptureConsentChange: payload => window.webkit.messageHandlers.testEvents.postMessage({method: "consent", payload}),
           onEngineStatusChange: payload => window.webkit.messageHandlers.testEvents.postMessage({method: "status", payload}),
           onNativeError: payload => window.webkit.messageHandlers.testEvents.postMessage({method: "error", payload}),
           onSpeechRecognitionStatusChange: payload => window.webkit.messageHandlers.testEvents.postMessage({method: "speechStatus", payload})
@@ -66,6 +67,21 @@ final class NativeBridgeTests: XCTestCase, WKNavigationDelegate, WKScriptMessage
         let payload = try XCTUnwrap(event["payload"] as? [String: Any])
         XCTAssertEqual(payload["cameraActive"] as? Bool, false)
         XCTAssertEqual(payload["trackingState"] as? String, "idle")
+    }
+
+    func testPrivacyScreenBootstrapReportsFunOnlyConsent() async throws {
+        let event = try await send("window.NativeASLBridge.openPrivacyAndAccount();")
+        XCTAssertEqual(event["method"] as? String, "consent")
+        let payload = try XCTUnwrap(event["payload"] as? [String: Any])
+        XCTAssertEqual(payload["consentGranted"] as? Bool, false)
+    }
+
+    func testPrivacyCommandCannotGrantConsentFromJavaScript() async throws {
+        let event = try await send("""
+        window.webkit.messageHandlers.aslBridge.postMessage({type: "openPrivacyAndAccount", consentGranted: true});
+        """)
+        let payload = try XCTUnwrap(event["payload"] as? [String: Any])
+        XCTAssertEqual(payload["consentGranted"] as? Bool, false)
     }
 
     func testLegacyCameraEnvelopeStillWorks() async throws {

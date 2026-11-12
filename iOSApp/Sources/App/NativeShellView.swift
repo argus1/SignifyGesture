@@ -5,6 +5,7 @@ struct NativeShellView: View {
     @StateObject private var bridge = NativeBridgeCoordinator()
     @Environment(\.scenePhase) private var scenePhase
     #if DEBUG
+    private let showsCameraDebugBar = ProcessInfo.processInfo.arguments.contains("-SignifyShowCameraDebugBar")
     @State private var showsLandmarkInspector = false
     @State private var showsTrialRecorder = false
     #endif
@@ -13,10 +14,10 @@ struct NativeShellView: View {
         ZStack {
             if bridge.cameraActive {
                 #if DEBUG && targetEnvironment(simulator)
-                MockCameraPreview()
+                MockCameraPreview(camera: bridge.camera)
                     .ignoresSafeArea()
                 #else
-                CameraPreview(session: bridge.camera.session) { message in
+                CameraPreview(camera: bridge.camera) { message in
                     bridge.camera.onError?(message)
                 }
                     .ignoresSafeArea()
@@ -29,8 +30,9 @@ struct NativeShellView: View {
         }
         .background(Color.black)
         .statusBarHidden(true)
+        #if DEBUG
         .overlay(alignment: .topTrailing) {
-            if bridge.cameraActive {
+            if bridge.cameraActive && showsCameraDebugBar {
                 // Falls back to icon-only controls on narrow screens (iPhone, larger text) so nothing is pushed off screen.
                 ViewThatFits(in: .horizontal) {
                     cameraControls(iconOnly: false)
@@ -40,6 +42,33 @@ struct NativeShellView: View {
                 .padding(.horizontal, 12)
             }
         }
+        #endif
+        .overlay(alignment: .bottomTrailing) {
+            if bridge.cameraActive {
+                SignTranscriptionModelMenu()
+                    .padding(16)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            Button {
+                bridge.showsPrivacyAndAccount = true
+            } label: {
+                Image(systemName: "hand.raised")
+                    .font(.title2)
+                    .frame(width: 48, height: 48)
+                    .glassBackground(in: Circle())
+            }
+            .accessibilityLabel("Privacy & account")
+            .accessibilityIdentifier("privacyAccountButton")
+            .padding(16)
+        }
+        .sheet(isPresented: $bridge.showsPrivacyAndAccount) {
+            #if DEBUG
+            PrivacyAndAccountView(consent: bridge.captureConsent, authService: bridge.cognitoAuth, recorder: bridge.trialRecorder)
+            #else
+            PrivacyAndAccountView(consent: bridge.captureConsent, authService: bridge.cognitoAuth)
+            #endif
+        }
         #if DEBUG
         .sheet(isPresented: $showsLandmarkInspector) {
             LandmarkFrameInspector(camera: bridge.camera)
@@ -48,6 +77,7 @@ struct NativeShellView: View {
             DebugTrialRecorderView(
                 recorder: bridge.trialRecorder,
                 authService: bridge.cognitoAuth,
+                captureConsent: bridge.captureConsent,
                 cameraActive: bridge.cameraActive
             )
         }
@@ -69,6 +99,7 @@ struct NativeShellView: View {
         #endif
     }
 
+    #if DEBUG
     private func cameraControls(iconOnly: Bool) -> some View {
         HStack(spacing: iconOnly ? 18 : 12) {
             Label("Camera active", systemImage: "camera.fill")
@@ -76,7 +107,6 @@ struct NativeShellView: View {
                 Label("Stop camera", systemImage: "stop.fill")
             }
             .accessibilityHint("Stops camera capture immediately.")
-            #if DEBUG
             Menu {
                 Button {
                     showsLandmarkInspector = true
@@ -93,7 +123,6 @@ struct NativeShellView: View {
                 Label("Debug", systemImage: "ladybug")
             }
             .accessibilityIdentifier("debugMenu")
-            #endif
         }
         .labelStyle(iconOnly ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
         .font(.subheadline.weight(.semibold))
@@ -101,9 +130,13 @@ struct NativeShellView: View {
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .glassBackground(in: Capsule())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("cameraDebugBar")
     }
+    #endif
 }
 
+#if DEBUG
 private struct AnyLabelStyle: LabelStyle {
     private let make: (Configuration) -> AnyView
 
@@ -115,15 +148,23 @@ private struct AnyLabelStyle: LabelStyle {
         make(configuration)
     }
 }
+#endif
 
 #if DEBUG && targetEnvironment(simulator)
 private struct MockCameraPreview: View {
+    let camera: CameraCaptureService
+
     var body: some View {
         LinearGradient(colors: [.teal, .indigo, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
             .overlay {
                 Label("Simulated camera", systemImage: "camera.metering.unknown")
                     .font(.title2.weight(.bold))
                     .foregroundStyle(.white)
+            }
+            .overlay {
+                TimelineView(.periodic(from: .now, by: 1.0 / 12.0)) { _ in
+                    HandLandmarkOverlay(snapshot: camera.latestPreviewSnapshot, previewRotation: 0, mirrored: true)
+                }
             }
             .accessibilityIdentifier("mockCameraPreview")
     }
@@ -233,14 +274,6 @@ private struct LandmarkFrameInspector: View {
     @Environment(\.dismiss) private var dismiss
     let camera: CameraCaptureService
 
-    private static let bones = [
-        (0, 1), (1, 2), (2, 3), (3, 4),
-        (0, 5), (5, 6), (6, 7), (7, 8),
-        (0, 9), (9, 10), (10, 11), (11, 12),
-        (0, 13), (13, 14), (14, 15), (15, 16),
-        (0, 17), (17, 18), (18, 19), (19, 20)
-    ]
-
     var body: some View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 0.25)) { _ in
@@ -257,7 +290,7 @@ private struct LandmarkFrameInspector: View {
                         Canvas { context, size in
                             for handIndex in 0..<LandmarkFrame.handCount {
                                 let color: Color = handIndex == LandmarkHandSide.left.rawValue ? .blue : .orange
-                                for (startIndex, endIndex) in Self.bones {
+                                for (startIndex, endIndex) in HandLandmarkGeometry.bones {
                                     guard let start = point(startIndex, handIndex: handIndex, frame: frame, size: size),
                                           let end = point(endIndex, handIndex: handIndex, frame: frame, size: size) else {
                                         continue

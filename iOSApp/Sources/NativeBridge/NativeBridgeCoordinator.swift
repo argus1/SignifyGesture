@@ -90,6 +90,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
       const bridge = window.NativeASLBridge = window.NativeASLBridge || {};
       const post = (type, payload) => window.webkit.messageHandlers.aslBridge.postMessage({ type, ...payload });
       bridge.triggerCameraToggle = bridge.triggerCameraToggle || ((active) => post("triggerCameraToggle", { active }));
+      bridge.openPrivacyAndAccount = bridge.openPrivacyAndAccount || (() => post("openPrivacyAndAccount", {}));
       bridge.triggerSpeechRecognition = bridge.triggerSpeechRecognition || ((active) => post("triggerSpeechRecognition", { active }));
       bridge.triggerTTSPlayback = bridge.triggerTTSPlayback || ((text, voiceId) => post("triggerTTSPlayback", { text, voiceId }));
       bridge.stopTTSPlayback = bridge.stopTTSPlayback || (() => post("stopTTSPlayback", {}));
@@ -99,9 +100,11 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     """
 
     let camera = CameraCaptureService()
+    let captureConsent = CaptureConsentState()
+    @MainActor lazy var cognitoAuth = CognitoAuthService()
+    @Published var showsPrivacyAndAccount = false
     #if DEBUG
     let trialRecorder = DebugTrialRecorder()
-    @MainActor lazy var cognitoAuth = CognitoAuthService()
     #endif
     private let speech = NativeSpeechService()
     private let transcription = LiveSpeechTranscriptionService()
@@ -151,6 +154,14 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
 
     override init() {
         super.init()
+        #if DEBUG
+        captureConsent.onWithdraw = { [weak self] in
+            try self?.trialRecorder.clear()
+        }
+        #endif
+        captureConsent.onChange = { [weak self] granted in
+            self?.emit(method: "onCaptureConsentChange", payload: ["consentGranted": granted])
+        }
         camera.onTrackingStateChange = { [weak self] state in
             guard let self else { return }
             self.emitEngineStatus(trackingState: state.rawValue)
@@ -639,7 +650,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
                 values[base + 1] = 0.3 + phase * 0.1
                 values[base + 2] = 0.9
             }
-            self?.trialRecorder.append(LandmarkFrame(mockValues: values, timestamp: t))
+            let frame = LandmarkFrame(mockValues: values, timestamp: t)
+            self?.camera.showMockLandmarks(frame)
+            self?.trialRecorder.append(frame)
         }
     }
 
@@ -692,6 +705,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         }
 
         switch method {
+        case "openPrivacyAndAccount":
+            showsPrivacyAndAccount = true
+            emit(method: "onCaptureConsentChange", payload: ["consentGranted": captureConsent.isGranted])
         case "triggerCameraToggle":
             guard let active = payload["active"] as? Bool else {
                 emit(method: "onNativeError", payload: ["feature": "camera", "message": "Missing camera active state."])

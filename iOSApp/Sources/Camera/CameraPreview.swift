@@ -2,28 +2,77 @@ import AVFoundation
 import SwiftUI
 
 struct CameraPreview: UIViewRepresentable {
-    let session: AVCaptureSession
+    let camera: CameraCaptureService
     let onError: (String) -> Void
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
         view.onError = onError
-        view.setSession(session)
+        view.landmarkSnapshot = { [weak camera] in camera?.latestPreviewSnapshot }
+        view.setSession(camera.session)
         view.previewLayer.videoGravity = .resizeAspectFill
         return view
     }
 
     func updateUIView(_ view: PreviewView, context: Context) {
         view.onError = onError
-        view.setSession(session)
+        view.landmarkSnapshot = { [weak camera] in camera?.latestPreviewSnapshot }
+        view.setSession(camera.session)
+    }
+
+    static func dismantleUIView(_ view: PreviewView, coordinator: ()) {
+        view.stopLandmarkUpdates()
     }
 }
 
 final class PreviewView: UIView {
     var onError: ((String) -> Void)?
+    var landmarkSnapshot: (() -> LandmarkPreviewSnapshot?)?
     private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
     private var rotationObservation: NSKeyValueObservation?
     private var reportedUnsupportedRotation = false
+    private var landmarkTimer: Timer?
+    private let landmarkOverlay = UIHostingController(
+        rootView: HandLandmarkOverlay(snapshot: nil, previewRotation: 0, mirrored: true)
+    )
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        landmarkOverlay.safeAreaRegions = []
+        landmarkOverlay.view.backgroundColor = .clear
+        landmarkOverlay.view.isUserInteractionEnabled = false
+        addSubview(landmarkOverlay.view)
+        clipsToBounds = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("PreviewView must be created programmatically.")
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        stopLandmarkUpdates()
+        guard window != nil else { return }
+        let timer = Timer(timeInterval: 1.0 / 12.0, repeats: true) { [weak self] _ in
+            self?.refreshLandmarks()
+        }
+        landmarkTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func stopLandmarkUpdates() {
+        landmarkTimer?.invalidate()
+        landmarkTimer = nil
+        landmarkOverlay.rootView = HandLandmarkOverlay(snapshot: nil, previewRotation: 0, mirrored: true)
+    }
+
+    private func refreshLandmarks() {
+        landmarkOverlay.rootView = HandLandmarkOverlay(
+            snapshot: landmarkSnapshot?(),
+            previewRotation: previewLayer.connection?.videoRotationAngle ?? 0,
+            mirrored: previewLayer.connection?.isVideoMirrored == true
+        )
+    }
 
     override class var layerClass: AnyClass {
         AVCaptureVideoPreviewLayer.self
@@ -54,7 +103,9 @@ final class PreviewView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        landmarkOverlay.view.frame = bounds
         updateRotation()
+        refreshLandmarks()
     }
 
     private func updateRotation() {
