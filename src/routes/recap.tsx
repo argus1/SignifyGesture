@@ -32,6 +32,7 @@ function Recap() {
   const s = useSignify();
   const nav = useNavigate();
   const [playing, setPlaying] = useState<string | null>(null);
+  const [selectedSign, setSelectedSign] = useState(SIGNS[0] ?? "Coffee");
   useEffect(() => {
     s.setStep("recap");
     void syncSessionToAWS({
@@ -42,6 +43,7 @@ function Recap() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const play = (w: string) => {
+    setSelectedSign(w);
     triggerAvatarReplay([w.toUpperCase()]);
     setPlaying(w);
     setTimeout(() => setPlaying((p) => (p === w ? null : p)), 1600);
@@ -106,7 +108,7 @@ function Recap() {
             icon={SmallHandIcon}
             onClick={() => {
               s.reset();
-              nav({ to: "/sign", search: {} });
+              nav({ to: "/learn", search: { sign: selectedSign } });
             }}
           >
             Practice these signs

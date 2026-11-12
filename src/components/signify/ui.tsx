@@ -359,7 +359,7 @@ const TABS: { to: string; label: string; icon: IconComponent; size?: string }[] 
   { to: "/home", label: "Translate", icon: TranslateHandIcon, size: "h-[23.4px] w-[29px]" },
   { to: "/messages", label: "Messages", icon: MessageCircle },
   { to: "/community", label: "Community", icon: Users },
-  { to: "/memory", label: "Memory", icon: BookOpen },
+  { to: "/learn", label: "Learn ASL", icon: BookOpen },
 ];
 
 /** 350 × 69 glass pill at y 745. The gray highlight slides between tabs (layoutId, spring.pill). */
