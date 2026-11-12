@@ -12,3 +12,9 @@
 - [x] Give Learn ASL an inner scroll area with bottom clearance.
 - [x] Verify Home, Memory, Messages, Community, Learn ASL, and Consent at 390×844.
 - [x] Remove the bottom fade and use only the shared tab bar's subtle diffuse shadow.
+
+# Conversation fixes
+
+- [x] Make the share pill advance the nearby-person sheet and leave its card informational.
+- [x] Remove speech-panel agent and bubble icons without changing bubble styling.
+- [x] Verify sharing, Skip, and speech captions in the phone preview.

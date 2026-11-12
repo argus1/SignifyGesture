@@ -487,6 +487,7 @@ export function GlassSheet({
   label,
   className,
   backdrop = true,
+  overlayClassName,
   layout = false,
 }: {
   open: boolean;
@@ -495,6 +496,7 @@ export function GlassSheet({
   label: string;
   className?: string;
   backdrop?: boolean;
+  overlayClassName?: string;
   /** "Sheet grow": animate the height when the content changes (Share step 1 → step 2) */
   layout?: boolean;
 }) {
@@ -519,7 +521,7 @@ export function GlassSheet({
   return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="absolute inset-0 z-50 flex flex-col justify-end">
+        <div className={cn("absolute inset-0 z-50 flex flex-col justify-end", overlayClassName)}>
           {backdrop && (
             <motion.button
               type="button"

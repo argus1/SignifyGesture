@@ -550,7 +550,6 @@ function SpeechMode({
               aria-label="Captions"
               className="relative rounded-[24px] border-[0.34px] border-ink-2 bg-card/80 px-[17px] pb-[17px] pt-[27px] backdrop-blur-[34px] dark:border-[0.5px] dark:border-white"
             >
-              <Bot className="absolute right-4 top-3.5 h-[17px] w-[17px]" aria-hidden />
               <CaptionList variant="speech" />
             </section>
             <div className="mt-3">
@@ -668,7 +667,7 @@ function Bubble({
         <span className="sr-only">
           {mine ? (c.typed ? "You typed:" : "You signed:") : "They said:"}
         </span>
-        {showGloss && c.gloss && (
+        {variant === "live" && showGloss && c.gloss && (
           <p className="t-label mb-0.5 text-ink-3">
             <span className="sr-only">Signs: </span>
             {c.gloss}
@@ -678,10 +677,7 @@ function Bubble({
           style={{ fontSize: size, lineHeight: `${size * 1.375}px` }}
           className={cn("font-medium", !c.final && "opacity-80")}
         >
-          {variant === "speech" && !mine && (
-            <AudioLines className="mr-1.5 inline h-3 w-3 -translate-y-0.5 text-ink-3" aria-hidden />
-          )}
-          {mine && c.typed && (
+          {variant === "live" && mine && c.typed && (
             <Keyboard
               className="mr-1.5 inline h-3.5 w-3.5 -translate-y-0.5 text-ink-3"
               aria-hidden

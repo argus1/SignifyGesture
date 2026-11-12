@@ -183,6 +183,7 @@ function ShareSheet({
       open={step > 0}
       onClose={() => setStep(0)}
       label={step === 2 ? "What do they get?" : "Other person nearby?"}
+      overlayClassName="share-sheet-overlay z-[60]"
       layout
     >
       {step === 1 ? (
@@ -191,10 +192,8 @@ function ShareSheet({
             <p className="t-label mt-[19px] text-center text-white">Other person nearby?</p>
           </SheetItem>
           <SheetItem>
-            <motion.button
-              {...press}
-              onClick={() => setStep(2)}
-              className="mx-[9px] mt-3 flex h-[79px] w-[329px] max-w-[calc(100%-18px)] items-center gap-[30px] rounded-[26px] bg-card pl-[33px] pr-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary dark:border-[0.5px] dark:border-white"
+            <div
+              className="mx-[9px] mt-3 flex h-[79px] w-[329px] max-w-[calc(100%-18px)] items-center gap-[30px] rounded-[26px] bg-card pl-[33px] pr-4 text-left dark:border-[0.5px] dark:border-white"
             >
               <Share className="h-4 w-4 shrink-0" aria-hidden />
               <span>
@@ -205,19 +204,18 @@ function ShareSheet({
                   Tap phones or AirDrop. They join in their browser, no app needed.
                 </span>
               </span>
-            </motion.button>
+            </div>
           </SheetItem>
           <SheetItem className="mt-[33px] flex gap-[22px]">
             <SecondaryButton onClick={onSkip} className="w-[152px] dark:border-white">
               Skip
             </SecondaryButton>
-            <motion.button
-              {...press}
+            <PrimaryButton
               onClick={() => setStep(2)}
-              className="t-btn h-11 flex-1 rounded-full bg-primary text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-foreground"
+              className="h-11 w-auto flex-1"
             >
               Share sign camera
-            </motion.button>
+            </PrimaryButton>
           </SheetItem>
         </div>
       ) : (
