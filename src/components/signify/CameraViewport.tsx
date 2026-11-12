@@ -65,7 +65,7 @@ export function CameraControl() {
   );
 }
 
-/** Browser-only stand-in for the camera (spec): flat #B9B9B9 in light mode, #787878 → #3D3D3D in dark. */
+/** Browser-only stand-in for the camera: shared camera token in light mode, existing gradient in dark. */
 function SampleScene() {
   return <div aria-hidden className="camera-placeholder absolute inset-0" />;
 }

@@ -133,7 +133,7 @@
   --line-strong: #bfbfbf;
   --line-icon: #d2d2d2;
   --grabber: #d2d2d2;
-  --camera: #b9b9b9;
+  --camera: #8c8c8c;
   --glass-rgb: 255, 255, 255;
   --scrim: rgba(0, 0, 0, 0.69);
   --chart-1: #01d190;
@@ -350,7 +350,7 @@ html[data-native-host] .native-camera-backdrop {
   background: linear-gradient(180deg, rgba(var(--glass-rgb), 0.4) 0%, rgba(var(--glass-rgb), 0.8) 41%, rgb(var(--glass-rgb)) 100%);
 }
 /* Camera stand-in in the browser: flat gray (light), dark gradient (dark) */
-.camera-placeholder { background: #b9b9b9; }
+.camera-placeholder { background: var(--camera); }
 .dark .camera-placeholder { background: linear-gradient(180deg, #787878, #3d3d3d); }
 
 /* Live dot and agent status dot: 1 → 0.4 → 1 every 1.6s */
