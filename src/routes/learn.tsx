@@ -1,11 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { BookOpen, ChevronRight, Play } from "lucide-react";
+import { BookOpen, ChevronRight } from "lucide-react";
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { CameraViewport } from "@/components/signify/CameraViewport";
-import { HandTrackingCue } from "@/components/signify/HandTrackingCue";
 import { Eyebrow, Header, PageTitle, PrimaryButton, Screen, TabBar } from "@/components/signify/ui";
-import { triggerAvatarReplay } from "@/lib/nativeBridge";
 import {
   CAPTURE_INTERVAL_MS,
   CAPTURE_TOTAL_FRAMES,
@@ -14,7 +11,7 @@ import {
   simulatedUsablePercentage,
   validatePracticeSearch,
 } from "@/lib/practice-capture";
-import { SIGNS } from "@/lib/sample-data";
+import { LEARN_SIGNS, SIGNS } from "@/lib/sample-data";
 import { seo } from "@/lib/seo";
 import { cn } from "@/lib/utils";
 
@@ -29,7 +26,8 @@ type CaptureState = "idle" | "capturing" | "captured";
 
 function Learn() {
   const { sign } = Route.useSearch();
-  const selectedSign = sign ?? SIGNS[0] ?? "Hello";
+  const selectedSign = SIGNS.find((gloss) => gloss === sign) ?? SIGNS[0] ?? "Develop";
+  const selectedVideo = LEARN_SIGNS.find((item) => item.gloss === selectedSign) ?? LEARN_SIGNS[0];
   const [captureState, setCaptureState] = useState<CaptureState>("idle");
   const [frames, setFrames] = useState(0);
   const [trial, setTrial] = useState(INITIAL_TRIAL);
@@ -56,13 +54,8 @@ function Learn() {
     }
   }, [captureState, frames]);
 
-  const playSign = () => {
-    triggerAvatarReplay([selectedSign.toUpperCase().replace(" ", "-")]);
-    toast(`Playing “${selectedSign}”`);
-  };
-
   return (
-    <Screen kind="tab" className="pb-0">
+    <Screen kind="tab" className="bg-background pb-0">
       <Header />
       <div className="relative min-h-0 flex-1">
         <div
@@ -93,18 +86,18 @@ function Learn() {
           </div>
 
           <section className="px-5 pt-4" aria-label={`${selectedSign} sign video`}>
-            <button
-              type="button"
-              onClick={playSign}
-              className="group relative aspect-video w-full overflow-hidden rounded-[24px] border border-line bg-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              aria-label={`Play the sign for ${selectedSign}`}
-            >
-              <span className="absolute inset-0 grid place-items-center">
-                <span className="grid h-14 w-14 place-items-center rounded-full border border-line bg-card transition-transform group-active:scale-95">
-                  <Play className="h-5 w-5" aria-hidden />
-                </span>
-              </span>
-            </button>
+            <div className="relative aspect-video w-full overflow-hidden rounded-[24px] border border-line bg-surface">
+              <iframe
+                key={selectedVideo.videoId}
+                src={`https://www.youtube-nocookie.com/embed/${selectedVideo.videoId}`}
+                title={`ASL sign for ${selectedSign}`}
+                className="absolute inset-0 h-full w-full"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                referrerPolicy="strict-origin-when-cross-origin"
+                allowFullScreen
+                loading="lazy"
+              />
+            </div>
             <h2 className="mt-3 text-[20px] font-medium leading-6">{selectedSign}</h2>
             <p className="mt-1 text-[13px] text-ink-2">Watch, then practice</p>
           </section>
@@ -137,10 +130,6 @@ function Learn() {
                     Usable frames {usablePercent}%
                   </span>
                 </div>
-                <HandTrackingCue
-                  gloss={selectedSign.toUpperCase().replace(" ", "-")}
-                  className="absolute inset-x-0 top-1/2 -translate-y-1/2 [&_svg]:h-[178px] [&_svg]:w-[150px]"
-                />
               </CameraViewport>
               <p className="mt-4 text-center text-[14px] font-medium" aria-live="polite">
                 Trial {trial} of 5

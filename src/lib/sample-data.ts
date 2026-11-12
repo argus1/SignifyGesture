@@ -74,4 +74,12 @@ export const THREADS: Thread[] = [
   },
 ];
 
-export const SIGNS = ["Coffee", "Iced", "Oat", "Milk", "Latte", "Thank you"];
+export const LEARN_SIGNS = [
+  { gloss: "Develop", videoId: "0bo8d1CqbV8" },
+  { gloss: "Decide", videoId: "EDQofKa0Jiw" },
+  { gloss: "Cloud", videoId: "Nnr6Mnv2b80" },
+  { gloss: "Research", videoId: "8hSsLSpjwDQ" },
+  { gloss: "Edit", videoId: "85cA3gbTx_A" },
+] as const;
+
+export const SIGNS = LEARN_SIGNS.map(({ gloss }) => gloss);

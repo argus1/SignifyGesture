@@ -18,7 +18,7 @@ export function nextTrial(trial: number) {
 
 /** Only known practice signs may be selected through a link. */
 export function validatePracticeSearch(search: Record<string, unknown>): { sign?: string } {
-  return typeof search["sign"] === "string" && SIGNS.includes(search["sign"])
+  return typeof search["sign"] === "string" && SIGNS.some((gloss) => gloss === search["sign"])
     ? { sign: search["sign"] }
     : {};
 }

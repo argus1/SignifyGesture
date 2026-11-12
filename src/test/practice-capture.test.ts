@@ -5,6 +5,7 @@ import {
   simulatedUsablePercentage,
   validatePracticeSearch,
 } from "@/lib/practice-capture";
+import { LEARN_SIGNS } from "@/lib/sample-data";
 
 describe("practice capture", () => {
   it("bounds the 120-frame prototype estimate and keeps it separate from actual quality", () => {
@@ -21,7 +22,17 @@ describe("practice capture", () => {
   });
 
   it("accepts a recap sign and rejects unknown sign selections", () => {
-    expect(validatePracticeSearch({ sign: "Latte" })).toEqual({ sign: "Latte" });
+    expect(validatePracticeSearch({ sign: "Develop" })).toEqual({ sign: "Develop" });
     expect(validatePracticeSearch({ sign: "Unknown" })).toEqual({});
+  });
+
+  it("uses the five supplied video glosses and their YouTube IDs", () => {
+    expect(LEARN_SIGNS).toEqual([
+      { gloss: "Develop", videoId: "0bo8d1CqbV8" },
+      { gloss: "Decide", videoId: "EDQofKa0Jiw" },
+      { gloss: "Cloud", videoId: "Nnr6Mnv2b80" },
+      { gloss: "Research", videoId: "8hSsLSpjwDQ" },
+      { gloss: "Edit", videoId: "85cA3gbTx_A" },
+    ]);
   });
 });
