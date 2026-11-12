@@ -407,6 +407,10 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         if cameraStarting {
             return
         }
+        #if DEBUG && targetEnvironment(simulator)
+        startMockCamera()
+        return
+        #endif
 
         switch camera.authorizationStatus {
         case .authorized:
@@ -547,6 +551,9 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
             requestCameraActivation()
             return
         }
+        #if DEBUG && targetEnvironment(simulator)
+        return
+        #endif
         guard cameraActive, camera.authorizationStatus != .authorized else { return }
         cameraPermissionPrompt = camera.authorizationStatus == .denied ? .denied : .restricted
         stopCameraCapture()
@@ -610,9 +617,46 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
         }
     }
 
+    #if DEBUG && targetEnvironment(simulator)
+    static let mockCameraLaunchArgument = "-SignifyMockCamera"
+    private var mockFrameTimer: Timer?
+
+    /// Simulator-only stand-in for the camera: no capture session, just synthetic landmark
+    /// frames so the debug menu and trial-capture UI can be exercised.
+    private func startMockCamera() {
+        cameraActivationPending = false
+        cameraActive = true
+        emitEngineStatus(trackingState: "tracking")
+        let start = Date().timeIntervalSince1970
+        mockFrameTimer?.invalidate()
+        mockFrameTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15.0, repeats: true) { [weak self] _ in
+            let t = Date().timeIntervalSince1970
+            let phase = Float((t - start).truncatingRemainder(dividingBy: 2))
+            var values = [Float](repeating: 0, count: LandmarkFrame.valueCount)
+            for joint in 0..<LandmarkFrame.jointCount {
+                let base = (LandmarkFrame.jointCount + joint) * 3
+                values[base] = 0.4 + Float(joint) * 0.01
+                values[base + 1] = 0.3 + phase * 0.1
+                values[base + 2] = 0.9
+            }
+            self?.trialRecorder.append(LandmarkFrame(mockValues: values, timestamp: t))
+        }
+    }
+
+    func startMockCameraIfRequested() {
+        if ProcessInfo.processInfo.arguments.contains(Self.mockCameraLaunchArgument) {
+            requestCameraActivation()
+        }
+    }
+    #endif
+
     private func stopCameraCapture() {
         #if DEBUG
         trialRecorder.interrupt("Camera stopped. Active trial discarded; please retry.")
+        #endif
+        #if DEBUG && targetEnvironment(simulator)
+        mockFrameTimer?.invalidate()
+        mockFrameTimer = nil
         #endif
         cameraOperationGeneration += 1
         cameraStarting = false

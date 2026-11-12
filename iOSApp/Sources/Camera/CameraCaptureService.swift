@@ -68,6 +68,13 @@ struct LandmarkFrame {
     let values: [Float]
     let timestamp: TimeInterval
 
+    #if DEBUG && targetEnvironment(simulator)
+    init(mockValues: [Float], timestamp: TimeInterval) {
+        values = mockValues
+        self.timestamp = timestamp
+    }
+    #endif
+
     init(hands: [LandmarkHand], timestamp: TimeInterval, sourceIsMirrored: Bool) {
         var values = Array(repeating: Float.zero, count: Self.valueCount)
         for side in [LandmarkHandSide.left, .right] {

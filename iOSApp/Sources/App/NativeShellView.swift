@@ -12,10 +12,15 @@ struct NativeShellView: View {
     var body: some View {
         ZStack {
             if bridge.cameraActive {
+                #if DEBUG && targetEnvironment(simulator)
+                MockCameraPreview()
+                    .ignoresSafeArea()
+                #else
                 CameraPreview(session: bridge.camera.session) { message in
                     bridge.camera.onError?(message)
                 }
                     .ignoresSafeArea()
+                #endif
             }
 
             NativeWebView(coordinator: bridge)
@@ -26,37 +31,20 @@ struct NativeShellView: View {
         .statusBarHidden(true)
         .overlay(alignment: .topTrailing) {
             if bridge.cameraActive {
-                HStack(spacing: 12) {
-                    Label("Camera active", systemImage: "camera.fill")
-                    Button(action: bridge.stopCamera) {
-                        Label("Stop camera", systemImage: "stop.fill")
-                    }
-                    .accessibilityHint("Stops camera capture immediately.")
-                    #if DEBUG
-                    Menu("Debug") {
-                        Button {
-                            showsLandmarkInspector = true
-                        } label: {
-                            Label("Landmarks", systemImage: "viewfinder")
-                        }
-                        .accessibilityHint("Inspect the latest hand landmarks in memory.")
-                        Button("Capture trials") { showsTrialRecorder = true }
-                    }
-                    #endif
+                // Falls back to icon-only controls on narrow screens (iPhone, larger text) so nothing is pushed off screen.
+                ViewThatFits(in: .horizontal) {
+                    cameraControls(iconOnly: false)
+                    cameraControls(iconOnly: true)
                 }
-                .font(.subheadline.weight(.semibold))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .glassBackground(in: Capsule())
                 .padding(.top, 12)
-                .padding(.trailing, 12)
+                .padding(.horizontal, 12)
             }
         }
         #if DEBUG
         .sheet(isPresented: $showsLandmarkInspector) {
             LandmarkFrameInspector(camera: bridge.camera)
         }
-        .sheet(isPresented: $showsTrialRecorder) {
+        .fullScreenCover(isPresented: $showsTrialRecorder) {
             DebugTrialRecorderView(
                 recorder: bridge.trialRecorder,
                 authService: bridge.cognitoAuth,
@@ -76,8 +64,71 @@ struct NativeShellView: View {
             bridge.stopCamera()
             bridge.stopSpeechCaptions()
         }
+        #if DEBUG && targetEnvironment(simulator)
+        .onAppear { bridge.startMockCameraIfRequested() }
+        #endif
+    }
+
+    private func cameraControls(iconOnly: Bool) -> some View {
+        HStack(spacing: iconOnly ? 18 : 12) {
+            Label("Camera active", systemImage: "camera.fill")
+            Button(action: bridge.stopCamera) {
+                Label("Stop camera", systemImage: "stop.fill")
+            }
+            .accessibilityHint("Stops camera capture immediately.")
+            #if DEBUG
+            Menu {
+                Button {
+                    showsLandmarkInspector = true
+                } label: {
+                    Label("Landmarks", systemImage: "viewfinder")
+                }
+                .accessibilityHint("Inspect the latest hand landmarks in memory.")
+                Button {
+                    showsTrialRecorder = true
+                } label: {
+                    Label("Capture trials", systemImage: "record.circle")
+                }
+            } label: {
+                Label("Debug", systemImage: "ladybug")
+            }
+            .accessibilityIdentifier("debugMenu")
+            #endif
+        }
+        .labelStyle(iconOnly ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
+        .font(.subheadline.weight(.semibold))
+        .fixedSize()
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .glassBackground(in: Capsule())
     }
 }
+
+private struct AnyLabelStyle: LabelStyle {
+    private let make: (Configuration) -> AnyView
+
+    init<S: LabelStyle>(_ style: S) {
+        make = { AnyView(Label($0).labelStyle(style)) }
+    }
+
+    func makeBody(configuration: Configuration) -> some View {
+        make(configuration)
+    }
+}
+
+#if DEBUG && targetEnvironment(simulator)
+private struct MockCameraPreview: View {
+    var body: some View {
+        LinearGradient(colors: [.teal, .indigo, .orange], startPoint: .topLeading, endPoint: .bottomTrailing)
+            .overlay {
+                Label("Simulated camera", systemImage: "camera.metering.unknown")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.white)
+            }
+            .accessibilityIdentifier("mockCameraPreview")
+    }
+}
+#endif
 
 extension View {
     /// Liquid Glass on iOS 26+, translucent material earlier, so the camera preview stays visible behind controls.
@@ -87,17 +138,6 @@ extension View {
             glassEffect(.regular, in: shape)
         } else {
             background(.ultraThinMaterial, in: shape)
-        }
-    }
-
-    @ViewBuilder
-    func glassPresentationBackground() -> some View {
-        if #available(iOS 26.0, *) {
-            presentationBackground {
-                Rectangle().fill(.clear).glassEffect(.regular, in: Rectangle())
-            }
-        } else {
-            presentationBackground(.ultraThinMaterial)
         }
     }
 

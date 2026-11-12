@@ -42,6 +42,16 @@ schemes:
       targets:
         - SignifyGestureTests
 
+  SignifyGestureUITests:
+    build:
+      targets:
+        SignifyGesture: all
+        SignifyGestureUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - SignifyGestureUITests
+
 targets:
   SignifyGesture:
     type: application
@@ -93,3 +103,17 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture2.tests
         GENERATE_INFOPLIST_FILE: YES
+
+  # Simulator-only: drives the Debug menu/trial capture against the mock camera.
+  SignifyGestureUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    dependencies:
+      - target: SignifyGesture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.argussun.signifygesture2.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: SignifyGesture

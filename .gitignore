@@ -14,6 +14,7 @@ iOSApp/*.xcuserstate
 Docs/*.local.md
 iOSApp/Config/Local.xcconfig
 iOSApp/.device-*/
+iOSApp/.sim-*/
 iOSApp/*.device.log
 
 # Logs

@@ -9,32 +9,37 @@ struct DebugTrialRecorderView: View {
     let cameraActive: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var signerID = "S01"
     @State private var split = "train"
     @State private var gloss = DebugTrialRecorder.glosses[0]
     @State private var consent = false
     @State private var confirmsExport = false
-    @State private var detent: PresentationDetent = .large
+    @State private var collapsed = false
     private let timer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
-    private static let compactDetent = PresentationDetent.height(190)
 
     var body: some View {
-        Group {
-            if detent == Self.compactDetent {
+        ZStack {
+            if collapsed {
                 compactControls
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             } else {
                 fullForm
+                    .glassBackground(in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                    .frame(maxWidth: 720)
+                    .padding(.horizontal, horizontalSizeClass == .regular ? 24 : 0)
+                    .padding(.vertical, horizontalSizeClass == .regular ? 24 : 0)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        // Collapsing to a short bottom panel keeps the native camera preview visible while signing.
-        .presentationDetents([Self.compactDetent, .large], selection: $detent)
-        .presentationBackgroundInteraction(.enabled(upThrough: Self.compactDetent))
-        .presentationDragIndicator(.visible)
-        .glassPresentationBackground()
-        .interactiveDismissDisabled()
-        .onAppear { if recorder.isRecording { detent = Self.compactDetent } }
+        .animation(.snappy, value: collapsed)
+        // Presented as a transparent full-screen cover so the native camera preview stays visible
+        // behind the glass; collapsing to the bottom card leaves the preview mostly unobstructed.
+        .presentationBackground(.clear)
+        .onAppear { collapsed = recorder.isRecording }
         .onChange(of: recorder.isRecording) { _, recording in
-            detent = recording ? Self.compactDetent : .large
+            collapsed = recording
         }
         .onChange(of: signerID) { _, _ in consent = false }
         .onChange(of: consent) { _, allowed in
@@ -57,49 +62,77 @@ struct DebugTrialRecorderView: View {
         }
     }
 
-    private var compactControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                if recorder.isRecording {
-                    Label("Recording", systemImage: "record.circle.fill")
-                        .foregroundStyle(.red)
-                } else {
-                    Label("Ready", systemImage: "hand.raised")
-                }
-                Spacer()
-                Text("\(recorder.frameCount) frames")
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-            }
-            .font(.headline)
-            Text("\(signerID) · \(split) · \(gloss)")
-                .font(.subheadline)
+    private var recordingStatus: some View {
+        Group {
             if recorder.isRecording {
-                Button("Stop and review") { recorder.stop() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.red)
-                    .frame(maxWidth: .infinity)
-            } else {
-                HStack {
-                    Button("Start trial", action: startTrial)
-                        .buttonStyle(.borderedProminent)
-                        .disabled(!canStart)
-                    Button("Show details") { detent = .large }
-                        .buttonStyle(.bordered)
-                }
-                .frame(maxWidth: .infinity)
-            }
-            if let error = recorder.errorMessage {
-                Text(error)
-                    .font(.footnote)
+                Label("Recording", systemImage: "record.circle.fill")
                     .foregroundStyle(.red)
-                    .lineLimit(2)
+            } else {
+                Label("Ready", systemImage: "hand.raised")
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .font(.headline)
+    }
+
+    @ViewBuilder
+    private var compactButtons: some View {
+        if recorder.isRecording {
+            Button("Stop and review") { recorder.stop() }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+            Button("Show details") { collapsed = false }
+                .buttonStyle(.bordered)
+        } else {
+            Button("Start trial", action: startTrial)
+                .buttonStyle(.borderedProminent)
+                .disabled(!canStart)
+            Button("Show details") { collapsed = false }
+                .buttonStyle(.bordered)
+        }
+    }
+
+    /// Only this bottom card is drawn while recording, so the camera preview stays visible.
+    private var compactControls: some View {
+        Group {
+            if verticalSizeClass == .compact {
+                HStack(spacing: 16) {
+                    recordingStatus
+                    Text("\(signerID) · \(split) · \(gloss) · \(recorder.frameCount) frames")
+                        .font(.subheadline)
+                        .monospacedDigit()
+                        .lineLimit(1)
+                    Spacer(minLength: 8)
+                    compactButtons
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        recordingStatus
+                        Spacer()
+                        Text("\(recorder.frameCount) frames")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("\(signerID) · \(split) · \(gloss)")
+                        .font(.subheadline)
+                    HStack { compactButtons }
+                        .frame(maxWidth: .infinity)
+                    if let error = recorder.errorMessage {
+                        Text(error)
+                            .font(.footnote)
+                            .foregroundStyle(.red)
+                            .lineLimit(2)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .glassBackground(in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("recordingPanel")
     }
 
     private var fullForm: some View {
@@ -129,13 +162,7 @@ struct DebugTrialRecorderView: View {
                         Text("Frames: \(recorder.frameCount). Accepted: \(recorder.trials.count)/75.")
                             .monospacedDigit()
                         Text("This signer/gloss: \(recorder.trials.filter { $0.signerID == signerID && $0.gloss == gloss }.count)/5 accepted.")
-                        if recorder.isRecording {
-                            Button("Stop and review") { recorder.stop() }
-                        } else {
-                            Button("Start trial", action: startTrial)
-                                .disabled(!canStart)
-                        }
-                        Text("Starting a trial collapses this panel so the camera preview stays visible. Drag the handle up for details.")
+                        Text("Start trial is pinned to the bottom of this panel. Starting collapses the panel to a small card so the camera preview stays visible.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -206,6 +233,28 @@ struct DebugTrialRecorderView: View {
                 .listRowBackground(Color.clear)
             }
             .scrollContentBackground(.hidden)
+            .safeAreaInset(edge: .bottom) {
+                if recorder.pendingTrial == nil {
+                    Group {
+                        if recorder.isRecording {
+                            HStack {
+                                Button("Stop and review") { recorder.stop() }
+                                    .tint(.red)
+                                Button("Hide details") { collapsed = true }
+                                    .buttonStyle(.bordered)
+                            }
+                        } else {
+                            Button("Start trial", action: startTrial)
+                                .disabled(!canStart)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .glassBackground(in: Rectangle())
+                }
+            }
             .transparentNavigationContainer()
             .navigationTitle("Debug trial capture")
             .toolbar {
