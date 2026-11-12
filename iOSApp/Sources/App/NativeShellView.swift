@@ -64,72 +64,7 @@ struct NativeShellView: View {
             )
         }
         #endif
-        .alert(
-            item: Binding(
-                get: { bridge.cameraPermissionPrompt },
-                set: { prompt in
-                    if prompt == nil {
-                        bridge.clearCameraPermissionPrompt()
-                    }
-                }
-            )
-        ) { prompt in
-            switch prompt {
-            case .rationale:
-                Alert(
-                    title: Text(prompt.title),
-                    message: Text(prompt.message),
-                    primaryButton: .default(Text("Continue"), action: bridge.confirmCameraPermission),
-                    secondaryButton: .cancel(Text("Not now"), action: bridge.cancelCameraActivation)
-                )
-            case .denied:
-                Alert(
-                    title: Text(prompt.title),
-                    message: Text(prompt.message),
-                    primaryButton: .default(Text("Open Settings"), action: bridge.openCameraSettings),
-                    secondaryButton: .cancel(Text("Not now"), action: bridge.cancelCameraActivation)
-                )
-            case .restricted, .unavailable:
-                Alert(
-                    title: Text(prompt.title),
-                    message: Text(prompt.message),
-                    dismissButton: .default(Text("OK"), action: bridge.cancelCameraActivation)
-                )
-            }
-        }
-        .alert(
-            item: Binding(
-                get: { bridge.microphonePermissionPrompt },
-                set: { prompt in
-                    if prompt == nil {
-                        bridge.clearMicrophonePermissionPrompt()
-                    }
-                }
-            )
-        ) { prompt in
-            switch prompt {
-            case .rationale:
-                Alert(
-                    title: Text(prompt.title),
-                    message: Text(prompt.message),
-                    primaryButton: .default(Text("Continue"), action: bridge.confirmMicrophonePermission),
-                    secondaryButton: .cancel(Text("Not now"), action: bridge.cancelSpeechCaptions)
-                )
-            case .denied:
-                Alert(
-                    title: Text(prompt.title),
-                    message: Text(prompt.message),
-                    primaryButton: .default(Text("Open Settings"), action: bridge.openMicrophoneSettings),
-                    secondaryButton: .cancel(Text("Type instead"), action: bridge.cancelSpeechCaptions)
-                )
-            case .restricted:
-                Alert(
-                    title: Text(prompt.title),
-                    message: Text(prompt.message),
-                    dismissButton: .default(Text("OK"), action: bridge.cancelSpeechCaptions)
-                )
-            }
-        }
+        .modifier(NativePermissionAlerts(bridge: bridge))
         .onChange(of: scenePhase) { _, phase in
             if phase == .active {
                 bridge.sceneDidBecomeActive()
@@ -140,6 +75,83 @@ struct NativeShellView: View {
         .onDisappear {
             bridge.stopCamera()
             bridge.stopSpeechCaptions()
+        }
+    }
+}
+
+struct NativePermissionAlerts: ViewModifier {
+    @ObservedObject var bridge: NativeBridgeCoordinator
+
+    func body(content: Content) -> some View {
+        // Capture the presented item so its dismissal cannot clear the next queued prompt.
+        let presented = bridge.permissionPrompt
+        content
+            .alert(
+                item: Binding(
+                    get: { bridge.permissionPrompt },
+                    set: { prompt in
+                        if prompt == nil, let presented {
+                            bridge.clearPermissionPrompt(presented)
+                        }
+                    }
+                )
+            ) { prompt in
+                switch prompt {
+                case .camera(let prompt):
+                    cameraAlert(prompt)
+                case .microphone(let prompt):
+                    microphoneAlert(prompt)
+                }
+            }
+    }
+
+    private func cameraAlert(_ prompt: CameraPermissionPrompt) -> Alert {
+        switch prompt {
+        case .rationale:
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                primaryButton: .default(Text("Continue"), action: bridge.confirmCameraPermission),
+                secondaryButton: .cancel(Text("Not now"), action: bridge.cancelCameraActivation)
+            )
+        case .denied:
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                primaryButton: .default(Text("Open Settings"), action: bridge.openCameraSettings),
+                secondaryButton: .cancel(Text("Not now"), action: bridge.cancelCameraActivation)
+            )
+        case .restricted, .unavailable:
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                dismissButton: .default(Text("OK"), action: bridge.cancelCameraActivation)
+            )
+        }
+    }
+
+    private func microphoneAlert(_ prompt: MicrophonePermissionPrompt) -> Alert {
+        switch prompt {
+        case .rationale:
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                primaryButton: .default(Text("Continue"), action: bridge.confirmMicrophonePermission),
+                secondaryButton: .cancel(Text("Not now"), action: bridge.cancelSpeechCaptions)
+            )
+        case .denied:
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                primaryButton: .default(Text("Open Settings"), action: bridge.openMicrophoneSettings),
+                secondaryButton: .cancel(Text("Type instead"), action: bridge.cancelSpeechCaptions)
+            )
+        case .restricted:
+            Alert(
+                title: Text(prompt.title),
+                message: Text(prompt.message),
+                dismissButton: .default(Text("OK"), action: bridge.cancelSpeechCaptions)
+            )
         }
     }
 }

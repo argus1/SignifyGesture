@@ -45,6 +45,7 @@ struct MemoryHit: Codable {
     let speaker: String
     let timestamp: Double
     let text: String
+    let rank: Int
 }
 
 struct MemoryRequest: Decodable {
@@ -248,7 +249,7 @@ final class ConversationMemory {
                             guard hits.count < 5, !hits.contains(where: { $0.text == text }) else { return }
                             hits.append(MemoryHit(conversationId: row["conversationId"], turnId: row["id"],
                                                   title: row["title"], speaker: row["speaker"],
-                                                  timestamp: row["timestamp"], text: text))
+                                                  timestamp: row["timestamp"], text: text, rank: hits.count + 1))
                         }
                 }
             default: throw MemoryFailure.invalidRequest

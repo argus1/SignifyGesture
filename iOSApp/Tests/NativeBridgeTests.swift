@@ -1,6 +1,7 @@
 import WebKit
 import Vision
 import XCTest
+import SwiftUI
 @testable import SignifyGesture
 
 @MainActor
@@ -117,6 +118,76 @@ final class NativeBridgeTests: XCTestCase, WKNavigationDelegate, WKScriptMessage
     func testBootstrapExposesSpeechCommands() {
         XCTAssertTrue(NativeBridgeCoordinator.webBridgeBootstrap.contains("bridge.triggerSpeechRecognition"))
         XCTAssertTrue(NativeBridgeCoordinator.webBridgeBootstrap.contains("bridge.stopTTSPlayback"))
+    }
+
+    func testCameraRationalePresentsWithMicrophonePresenterInstalled() async throws {
+        let coordinator = NativeBridgeCoordinator()
+        try XCTSkipUnless(coordinator.camera.authorizationStatus == .notDetermined,
+                          "Requires undetermined camera permission; does not reset device permissions.")
+        try await assertPermissionAlert(coordinator: coordinator, title: CameraPermissionPrompt.rationale.title) {
+            coordinator.requestCameraActivation()
+        }
+        XCTAssertEqual(coordinator.permissionPrompt, .camera(.rationale))
+        coordinator.cancelCameraActivation()
+        XCTAssertNil(coordinator.permissionPrompt)
+    }
+
+    func testMicrophoneRationalePresentsWithCameraPresenterInstalled() async throws {
+        let coordinator = NativeBridgeCoordinator()
+        try XCTSkipUnless(LiveSpeechTranscriptionService.permission == .undetermined,
+                          "Requires undetermined microphone/speech permission.")
+        try await assertPermissionAlert(coordinator: coordinator, title: MicrophonePermissionPrompt.rationale.title) {
+            coordinator.requestSpeechCaptions()
+        }
+        XCTAssertEqual(coordinator.permissionPrompt, .microphone(.rationale))
+        coordinator.cancelSpeechCaptions()
+        XCTAssertNil(coordinator.permissionPrompt)
+    }
+
+    func testDismissingCameraPromptPreservesPendingMicrophonePrompt() throws {
+        let coordinator = NativeBridgeCoordinator()
+        try XCTSkipUnless(coordinator.camera.authorizationStatus == .notDetermined &&
+                          LiveSpeechTranscriptionService.permission == .undetermined,
+                          "Requires undetermined permissions.")
+        coordinator.requestCameraActivation()
+        coordinator.requestSpeechCaptions()
+        XCTAssertEqual(coordinator.permissionPrompt, .camera(.rationale))
+        coordinator.clearPermissionPrompt(.camera(.rationale))
+        XCTAssertEqual(coordinator.permissionPrompt, .microphone(.rationale))
+        // A late dismissal of the old alert must not remove the other permission request.
+        coordinator.clearPermissionPrompt(.camera(.rationale))
+        XCTAssertEqual(coordinator.permissionPrompt, .microphone(.rationale))
+        coordinator.cancelCameraActivation()
+        coordinator.cancelSpeechCaptions()
+    }
+
+    private func assertPermissionAlert(
+        coordinator: NativeBridgeCoordinator,
+        title: String,
+        request: () -> Void
+    ) async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let previousWindow = scene.windows.first(where: \.isKeyWindow)
+        let window = UIWindow(windowScene: scene)
+        let host = UIHostingController(rootView: Color.clear.modifier(NativePermissionAlerts(bridge: coordinator)))
+        window.rootViewController = host
+        window.makeKeyAndVisible()
+        defer {
+            host.dismiss(animated: false)
+            window.isHidden = true
+            previousWindow?.makeKey()
+        }
+        request()
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            if let alert = host.presentedViewController as? UIAlertController {
+                XCTAssertEqual(alert.title, title)
+                XCTAssertTrue(alert.actions.contains { $0.title == "Continue" })
+                return
+            }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTFail("Permission rationale did not present: \(title)")
     }
 
     func testLandmarkFrameNormalizesMirroredKnownPoseAndOrdersHandsBySide() {

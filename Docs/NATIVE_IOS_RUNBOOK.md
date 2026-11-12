@@ -365,6 +365,29 @@ After pulling a bundle-identifier correction:
 
 ## Bridge regression checks
 
+Camera and microphone rationales share one native alert presenter. Do not attach
+separate legacy `.alert(item:)` modifiers to the shell: the later modifier can
+suppress the camera rationale before iOS authorization is requested.
+`NativeBridgeTests` hosts the real presenter and verifies both first-use
+rationales without granting permissions or starting capture. Those tests skip
+when the test device already has a permission decision; they never reset it.
+Metadata-only authorization/start diagnostics use the native `permissions` log
+category (no transcript, audio, or video contents).
+
+On a physical device, verify **Start camera** shows the camera rationale,
+**Continue** reaches the iOS prompt if permission is undetermined, and allowing
+access starts the preview. Then switch to Speech and verify the microphone/speech
+permission flow. Verify denial/Settings recovery, Stop/Start camera, backgrounding,
+and returning to Sign mode. Rebuild and reinstall the native app for this fix;
+refreshing the deployed frontend alone cannot update the native presenter.
+
+On November 11, 2026, the device operator verified the corrected Release build
+on a physical M1 iPad Air (5th generation): the camera rationale and iOS
+permission prompt appeared, live preview worked, and the microphone/speech
+permission dialog worked with live captions starting. The build used the
+production frontend. This verifies those first-use flows, not the remaining
+denial/lifecycle checks, iPhone coverage, or AFM availability.
+
 The frontend posts flat commands such as
 `{ type: "triggerCameraToggle", active: true }` to `aslBridge`. Swift accepts
 that contract and the older `{ method, payload }` envelope. Errors return through

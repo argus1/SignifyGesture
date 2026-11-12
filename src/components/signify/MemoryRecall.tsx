@@ -90,7 +90,7 @@ export function MemoryRecall() {
         {hits.map((hit) => (
           <li key={hit.turnId} className="rounded-xl bg-muted p-3">
             <p className="text-sm font-bold">
-              {hit.speaker === "sam" ? "You said" : "Other speaker said"}
+              Match {hit.rank} · {hit.speaker === "sam" ? "You said" : "Other speaker said"}
             </p>
             <p className="break-words">{hit.text}</p>
             <Link

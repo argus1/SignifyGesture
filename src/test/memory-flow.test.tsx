@@ -237,10 +237,12 @@ describe("conversation memory UI", () => {
           speaker: "sam",
           timestamp: 2000,
           title: saved.title,
+          rank: 1,
         },
       ],
     });
     expect(await screen.findByText("A return ticket please")).toBeInTheDocument();
+    expect(screen.getByText("Match 1 · You said")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent("not generated suggestions");
     expect(screen.getByRole("link", { name: /From saved conversation/ })).toHaveAttribute(
       "href",
@@ -267,6 +269,7 @@ describe("conversation memory UI", () => {
           speaker: "sam",
           timestamp: 2000,
           title: saved.title,
+          rank: 1,
         },
       ],
     });

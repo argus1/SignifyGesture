@@ -71,7 +71,20 @@ enum MicrophonePermissionPrompt: String, Identifiable {
     }
 }
 
+enum NativePermissionPrompt: Equatable, Identifiable {
+    case camera(CameraPermissionPrompt)
+    case microphone(MicrophonePermissionPrompt)
+
+    var id: String {
+        switch self {
+        case .camera(let prompt): return "camera-\(prompt.id)"
+        case .microphone(let prompt): return "microphone-\(prompt.id)"
+        }
+    }
+}
+
 final class NativeBridgeCoordinator: NSObject, ObservableObject {
+    private static let permissionLogger = Logger(subsystem: "com.argussun.signifygesture", category: "permissions")
     static let webBridgeBootstrap = """
     (() => {
       const bridge = window.NativeASLBridge = window.NativeASLBridge || {};
@@ -109,6 +122,23 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     @Published private(set) var cameraStarting = false
     @Published private(set) var cameraPermissionPrompt: CameraPermissionPrompt?
     @Published private(set) var microphonePermissionPrompt: MicrophonePermissionPrompt?
+
+    var permissionPrompt: NativePermissionPrompt? {
+        if let cameraPermissionPrompt { return .camera(cameraPermissionPrompt) }
+        if let microphonePermissionPrompt { return .microphone(microphonePermissionPrompt) }
+        return nil
+    }
+
+    func clearPermissionPrompt(_ prompt: NativePermissionPrompt) {
+        switch prompt {
+        case .camera(let value) where cameraPermissionPrompt == value:
+            clearCameraPermissionPrompt()
+        case .microphone(let value) where microphonePermissionPrompt == value:
+            clearMicrophonePermissionPrompt()
+        default: break
+        }
+    }
+
     private var speechCaptionsPending = false
     private var frontendLoadFailed = false
     private var recentFrames: [[Float]] = []
@@ -369,6 +399,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     func requestCameraActivation() {
+        Self.permissionLogger.info("camera_activation_requested authorization=\(self.camera.authorizationStatus.rawValue) active=\(self.cameraActive) starting=\(self.cameraStarting)")
         if cameraActive {
             cameraActivationPending = false
             return
@@ -397,6 +428,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     func confirmCameraPermission() {
+        Self.permissionLogger.info("camera_permission_rationale_confirmed")
         cameraPermissionPrompt = nil
         cameraActivationPending = true
         startCameraCapture()
@@ -427,6 +459,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     func requestSpeechCaptions() {
+        Self.permissionLogger.info("speech_captions_requested permission=\(String(describing: LiveSpeechTranscriptionService.permission), privacy: .public)")
         switch LiveSpeechTranscriptionService.permission {
         case .granted:
             speechCaptionsPending = false
@@ -450,6 +483,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
     }
 
     func confirmMicrophonePermission() {
+        Self.permissionLogger.info("microphone_permission_rationale_confirmed")
         microphonePermissionPrompt = nil
         LiveSpeechTranscriptionService.requestPermission { [weak self] permission in
             guard let self, self.speechCaptionsPending else { return }
@@ -544,6 +578,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
             self.cameraStarting = false
             switch result {
             case .success:
+                Self.permissionLogger.info("camera_capture_started")
                 self.cameraActivationPending = false
                 self.cameraActive = true
                 self.emitEngineStatus(trackingState: self.camera.trackingState.rawValue)
@@ -556,6 +591,7 @@ final class NativeBridgeCoordinator: NSObject, ObservableObject {
                     )
                 }
             case .failure(let error):
+                Self.permissionLogger.error("camera_capture_start_failed")
                 self.cameraActive = false
                 self.cameraActivationPending = false
                 self.emitEngineStatus(trackingState: "idle")

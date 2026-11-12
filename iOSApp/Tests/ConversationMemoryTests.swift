@@ -162,6 +162,7 @@ final class ConversationMemoryTests: XCTestCase {
         try enableRecall()
         let hits = try request("search", query: "lat").hits
         XCTAssertEqual(hits.count, 5)
+        XCTAssertEqual(hits.map(\.rank), [1, 2, 3, 4, 5])
         XCTAssertLessThanOrEqual(hits.map { $0.text.utf16.count }.reduce(0, +), 2500)
         for hit in hits {
             XCTAssertLessThanOrEqual(hit.text.utf16.count, 500)

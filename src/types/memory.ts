@@ -42,6 +42,7 @@ export const memoryHitSchema = z.object({
   speaker: z.enum(["sam", "other"]),
   timestamp,
   text: z.string().max(500),
+  rank: z.number().int().min(1).max(5),
 });
 export const memoryDataSchema = z.object({
   generation: z.number().int().nonnegative(),
