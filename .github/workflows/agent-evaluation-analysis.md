@@ -11,45 +11,41 @@ permissions:
   issues: read
   pull-requests: read
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - "scripts/evaluate-asl.ts"
-      - "src/lib/aslEvaluation.ts"
-      - "src/test/asl-evaluation.test.ts"
-      - "fixtures/asl-evaluation/**"
-      - "iOSApp/Sources/Inference/**"
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Open same-repository PR number to analyze"
+        required: true
+        type: string
   roles: [admin, maintain, write]
-if: vars.AGENTIC_WORKFLOWS_ENABLED == 'true' && github.event.pull_request.draft == false
+if: vars.AGENTIC_WORKFLOWS_ENABLED == 'true' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
 imports:
   - .github/aw/common.md
   - .github/aw/frontend-tools.md
-checkout:
-  fetch-depth: 0
+  - .github/aw/manual-pr.md
 concurrency:
-  group: agent-evaluation-${{ github.event.pull_request.number }}
+  group: agent-evaluation-${{ inputs.pr_number }}
   cancel-in-progress: true
+  job-discriminator: ${{ github.run_id }}
 safe-outputs:
   report-incomplete: false
   report-missing-data: false
   report-missing-tool: false
   add-comment:
     max: 1
-    target: triggering
+    target: "${{ inputs.pr_number }}"
     replace-older-comments: true
 ---
 
 # Analyze synthetic evaluation regressions
 
-Compare base `${{ github.event.pull_request.base.sha }}` and head
-`${{ github.event.pull_request.head.sha }}` of PR
-#${{ github.event.pull_request.number }}. These fixtures are invented predictions,
+Compare the shared base/head SHAs of the manually selected PR.
+These fixtures are invented predictions,
 not model results or measurements of people/devices.
 
-Install frozen dependencies and run
-`npm test -- src/test/asl-evaluation.test.ts`.
 Create separate temporary detached git worktrees at the exact base and head
-SHAs. In each worktree run
+SHAs. In the head worktree install frozen dependencies and run
+`npm test -- src/test/asl-evaluation.test.ts`. In each worktree run
 `node --experimental-strip-types scripts/evaluate-asl.ts fixtures/asl-evaluation/validation.json fixtures/asl-evaluation/test.json 0.7`.
 Use no raw capture exports, model downloads, participant samples or network APIs.
 If a SHA cannot be resolved, a file does not exist on base, or execution fails,

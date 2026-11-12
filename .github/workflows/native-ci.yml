@@ -50,7 +50,7 @@ jobs:
           settings = {entry["target"]: entry["buildSettings"] for entry in json.load(sys.stdin)}
           expected = {
               "SignifyGesture": "com.argussun.signifygesture2",
-              "SignifyMessages": "com.argussun.signifygesture2.messages",
+              "SignifyMessages": "com.argussun.signifygesture2.messages2",
               "SignifyGestureTests": "com.argussun.signifygesture2.tests",
           }
           for target, identifier in expected.items():
@@ -121,17 +121,37 @@ jobs:
           python3 - <<'PY'
           import os
           import plistlib
+          import subprocess
           from pathlib import Path
 
           app = Path(os.environ["RUNNER_TEMP"]) / "signify-release/Build/Products/Release-iphonesimulator/SignifyGesture.app"
-          with (app / "PlugIns/SignifyMessages.appex/Info.plist").open("rb") as source:
+          bundle = app / "PlugIns/SignifyMessages.appex"
+          with (bundle / "Info.plist").open("rb") as source:
               info = plistlib.load(source)
           extension = info.get("NSExtension", {})
-          if info.get("CFBundleIdentifier") != "com.argussun.signifygesture2.messages":
+          if info.get("CFBundleIdentifier") != "com.argussun.signifygesture2.messages2":
               raise SystemExit("Messages extension bundle identifier is incorrect")
           if extension.get("NSExtensionPointIdentifier") != "com.apple.message-payload-provider":
               raise SystemExit("Messages extension point is incorrect")
           if extension.get("NSExtensionPrincipalClass") != "SignifyMessages.MessagesViewController":
               raise SystemExit("Messages extension principal class is incorrect")
-          print("Messages extension is embedded with the expected metadata.")
+          if info.get("MSMessagesExtensionStoreIconName") != "MessagesIcon":
+              raise SystemExit("Messages extension store icon metadata is missing or incorrect")
+          icons = info.get("CFBundleIcons", {}).get("CFBundlePrimaryIcon", {}).get("CFBundleIconFiles", [])
+          if not icons:
+              raise SystemExit("Messages extension primary icon metadata is missing")
+          required = {(180, 135), (120, 90), (148, 110), (64, 48),
+                      (81, 60), (134, 100), (54, 40), (96, 72)}
+          actual = set()
+          for icon in bundle.glob("*.png"):
+              if not any(icon.stem.startswith(name) for name in icons):
+                  continue
+              metadata = subprocess.check_output(
+                  ["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(icon)], text=True)
+              dimensions = dict(line.strip().split(": ", 1) for line in metadata.splitlines()
+                                if line.strip().startswith(("pixelWidth:", "pixelHeight:")))
+              actual.add((int(dimensions["pixelWidth"]), int(dimensions["pixelHeight"])))
+          if required - actual:
+              raise SystemExit(f"Messages extension is missing compiled icon sizes: {sorted(required - actual)}")
+          print("Messages extension is embedded with the expected metadata and all required icon sizes.")
           PY
