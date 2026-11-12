@@ -1,7 +1,8 @@
 import { createFileRoute, notFound } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
-import { ChevronLeft, Hand, Mic, Play, Video, ArrowUp } from "lucide-react";
+import { ChevronLeft, Mic, Play, Video, ArrowUp } from "lucide-react";
+import { SmallHandIcon } from "@/components/signify/icons";
 import { toast } from "sonner";
 import { HeaderIconButton, Screen, press, DUR, EASE } from "@/components/signify/ui";
 import { THREADS, type Msg } from "@/lib/sample-data";
@@ -132,7 +133,7 @@ function Thread() {
               onClick={() => toast("Camera opens in the native app")}
               className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-surface"
             >
-              <Hand className="h-4 w-4" aria-hidden />
+              <SmallHandIcon className="h-[18.6px] w-auto" aria-hidden />
             </motion.button>
             <motion.button
               {...press}

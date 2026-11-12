@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { motion } from "framer-motion";
 import { useEffect, useState } from "react";
-import { Bot, ChevronLeft, Hand, Play } from "lucide-react";
+import { Bot, ChevronLeft, Play } from "lucide-react";
+import { SmallHandIcon } from "@/components/signify/icons";
 import { useSignify } from "@/lib/signify-store";
 import {
   Header,
@@ -102,7 +103,7 @@ function Recap() {
 
         <div className="mt-auto pb-[31px]">
           <PrimaryButton
-            icon={Hand}
+            icon={SmallHandIcon}
             onClick={() => {
               s.reset();
               nav({ to: "/sign", search: {} });

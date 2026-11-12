@@ -3,7 +3,6 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   X,
-  Hand,
   AudioLines,
   ArrowLeftRight,
   Keyboard,
@@ -15,6 +14,7 @@ import {
   Check,
   Undo2,
 } from "lucide-react";
+import { SignHandIcon, type IconComponent } from "@/components/signify/icons";
 import { toast } from "sonner";
 import { useNativeBridge, useSignify, type Caption } from "@/lib/signify-store";
 import { isNativeHost } from "@/lib/nativeBridge";
@@ -241,8 +241,8 @@ function ModeToggle({
   onCamera: boolean;
   onChange: (m: ConversationMode) => void;
 }) {
-  const pills: { id: ConversationMode; label: string; icon: typeof Hand; size: number }[] = [
-    { id: "sign", label: "Signing", icon: Hand, size: 26 },
+  const pills: { id: ConversationMode; label: string; icon: IconComponent; size: number }[] = [
+    { id: "sign", label: "Signing", icon: SignHandIcon, size: 26.5 },
     { id: "speech", label: "Speech", icon: AudioLines, size: 22 },
   ];
   return (
@@ -294,7 +294,7 @@ function ModeToggle({
                 )}
                 <p.icon
                   className={cn("relative", onCamera && "text-black dark:text-white")}
-                  style={{ width: p.size, height: p.size }}
+                  style={{ height: p.size, width: "auto" }}
                   aria-hidden
                 />
               </motion.button>

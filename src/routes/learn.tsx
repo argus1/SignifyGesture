@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Play, Hand } from "lucide-react";
+import { Play } from "lucide-react";
+import { SmallHandIcon } from "@/components/signify/icons";
 import { toast } from "sonner";
 import { TopBar, Pill } from "@/components/signify/ui";
 import { SIGNS } from "@/lib/sample-data";
@@ -32,7 +33,7 @@ function Learn() {
         ))}
       </ul>
       <div className="mt-auto px-5 pt-6 pb-6">
-        <Pill variant="mint" className="w-full" onClick={() => toast.success("Practice started. Sign along!")}><Hand className="h-5 w-5" /> Practice with camera</Pill>
+        <Pill variant="mint" className="w-full" onClick={() => toast.success("Practice started. Sign along!")}><SmallHandIcon className="h-5 w-auto" aria-hidden /> Practice with camera</Pill>
       </div>
     </div>
   );

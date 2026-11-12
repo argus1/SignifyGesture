@@ -3,7 +3,6 @@ import { motion, useReducedMotion } from "framer-motion";
 import { useState } from "react";
 import {
   AudioLines,
-  Hand,
   Share,
   Camera,
   Captions,
@@ -12,6 +11,7 @@ import {
   QrCode,
   type LucideIcon,
 } from "lucide-react";
+import { SignHandIcon, type IconComponent } from "@/components/signify/icons";
 import { toast } from "sonner";
 import {
   Header,
@@ -84,8 +84,8 @@ function Home() {
             strong
           />
           <SidePill
-            icon={Hand}
-            iconSize={26}
+            icon={SignHandIcon}
+            iconSize={29.4}
             title="Signing"
             sub="ASL"
             subMuted
@@ -128,7 +128,7 @@ function SidePill({
   strong,
   onClick,
 }: {
-  icon: LucideIcon;
+  icon: IconComponent;
   iconSize: number;
   title: string;
   sub: string;
@@ -148,7 +148,7 @@ function SidePill({
     >
       <Icon
         className="absolute left-[35px]"
-        style={{ width: iconSize, height: iconSize }}
+        style={{ height: iconSize, width: "auto" }}
         aria-hidden
       />
       <span className="flex flex-col items-center pl-6">

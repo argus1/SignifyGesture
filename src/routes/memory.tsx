@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { motion, useReducedMotion } from "framer-motion";
-import { Bot, ChevronRight, Coffee, Hand, Phone, BookOpen, type LucideIcon } from "lucide-react";
+import { Bot, ChevronRight, Coffee, Phone, BookOpen } from "lucide-react";
+import { SmallHandIcon, type IconComponent } from "@/components/signify/icons";
 import { toast } from "sonner";
 import {
   Header,
@@ -28,7 +29,7 @@ const RECAPS: {
   title: string;
   when: string;
   where: string;
-  icon: LucideIcon;
+  icon: IconComponent;
   signs?: number;
 }[] = [
   {
@@ -44,7 +45,7 @@ const RECAPS: {
     title: "Meeting Candace",
     when: "Today",
     where: "ASL meetup",
-    icon: Hand,
+    icon: SmallHandIcon,
     signs: 4,
   },
   { id: "jon", title: "Call with Jon", when: "Yesterday", where: "Video call", icon: Phone },
@@ -74,7 +75,10 @@ function Memory() {
           const row = (
             <>
               <span className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-card dark:border-0">
-                <r.icon className="h-4 w-4" aria-hidden />
+                <r.icon
+                  className={r.icon === SmallHandIcon ? "h-[18.6px] w-auto" : "h-4 w-4"}
+                  aria-hidden
+                />
               </span>
               <span className="min-w-0 flex-1">
                 <span className="flex items-center justify-between gap-2">
