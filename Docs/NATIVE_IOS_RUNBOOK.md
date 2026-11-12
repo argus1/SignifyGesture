@@ -152,6 +152,19 @@ consented recorder. Installing a Release build hides both tools, regardless of
 which frontend is deployed. Reinstall Debug to restore them; do not enable
 training-data capture in ordinary distribution builds to work around this.
 
+On the simulator, Debug builds replace the camera with a mock (gradient preview
+plus synthetic landmark frames) so the Debug menu and trial capture can be
+exercised without hardware. Launch with `-SignifyMockCamera` to start it
+automatically. The `SignifyGestureUITests` scheme checks that the Debug menu,
+trial form, Start/Stop and review controls stay reachable in portrait and
+landscape (it does not validate real capture; do that on device):
+
+```sh
+xcodebuild test -project iOSApp/SignifyGesture.xcodeproj \
+  -scheme SignifyGestureUITests -destination 'platform=iOS Simulator,name=iPhone 16e' \
+  CODE_SIGN_IDENTITY=- CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM=
+```
+
 1. Follow the [P07 consent/storage protocol](ASL_translation_hackathon_plan.md#p07-fixture-protocol)
    before capture. Explain the collector, private withdrawal route, purpose,
    partition and deletion deadline. The participant must affirm consent; camera
